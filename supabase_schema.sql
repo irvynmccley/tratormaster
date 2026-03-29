@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.sales (
     nota_fiscal TEXT,
     condicao TEXT,
     quantidade_cota INTEGER,
+    observacao TEXT,
     recebido_gerente BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

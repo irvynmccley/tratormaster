@@ -97,6 +97,7 @@ export default function App() {
             notaFiscal: s.nota_fiscal,
             condicao: s.condicao as Condition,
             quantidadeCota: s.quantidade_cota,
+            observacao: s.observacao,
             recebidoGerente: s.recebido_gerente
           }));
           setSales(formattedSales);
@@ -169,6 +170,7 @@ export default function App() {
         nota_fiscal: sale.notaFiscal,
         condicao: sale.condicao,
         quantidade_cota: sale.quantidadeCota,
+        observacao: sale.observacao,
         recebido_gerente: sale.recebidoGerente
       }]);
       
@@ -194,6 +196,7 @@ export default function App() {
         nota_fiscal: updatedSale.notaFiscal,
         condicao: updatedSale.condicao,
         quantidade_cota: updatedSale.quantidadeCota,
+        observacao: updatedSale.observacao,
         recebido_gerente: updatedSale.recebidoGerente
       }).eq('id', updatedSale.id);
 
@@ -396,8 +399,9 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
 
 // --- DASHBOARD TAB ---
 function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
-  const totalSales = sales.reduce((acc, s) => acc + s.valor, 0);
-  const salesCount = sales.length;
+  const jcbSales = sales.filter(s => s.marca === 'JCB');
+  const totalSales = jcbSales.reduce((acc, s) => acc + s.valor, 0);
+  const salesCount = jcbSales.length;
 
   const handleShare = async (elementId: string, title: string) => {
     const element = document.getElementById(elementId);
@@ -426,17 +430,29 @@ function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
     }).filter(e => e.meta > 0 || e.realizado > 0);
   }, [sales, goals]);
 
-  const salesBySellerQty = useMemo(() => {
-    return SELLERS.map(seller => {
-      const realized = sales.filter(s => s.vendedor === seller && s.equipamento !== 'Consórcio').length;
-      const meta = goals.filter(g => g.vendedor === seller && g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
-      return {
-        name: seller,
-        realizado: realized,
-        meta: meta
-      };
-    }).sort((a, b) => b.realizado - a.realizado);
-  }, [sales, goals]);
+  const salesByMonthAndSeller = useMemo(() => {
+    const byMonthMap = new Map<string, { month: string, [seller: string]: any }>();
+    
+    // Filter out Consórcio
+    const validSales = sales.filter(s => s.equipamento !== 'Consórcio');
+    
+    validSales.forEach(s => {
+      const date = new Date(s.data);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+      
+      if (!byMonthMap.has(monthKey)) {
+        const initialData: any = { month: monthLabel };
+        SELLERS.forEach(seller => initialData[seller] = 0);
+        byMonthMap.set(monthKey, initialData);
+      }
+      
+      const monthData = byMonthMap.get(monthKey)!;
+      monthData[s.vendedor] = (monthData[s.vendedor] || 0) + 1;
+    });
+
+    return Array.from(byMonthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
+  }, [sales]);
 
   const consorcioData = useMemo(() => {
     const consorcioSales = sales.filter(s => s.equipamento === 'Consórcio');
@@ -480,7 +496,9 @@ function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
   const sellerColors: Record<string, string> = {
     'Anderson': 'url(#colorAnderson)',
     'Carlos': 'url(#colorCarlos)',
-    'Thalita': 'url(#colorThalita)'
+    'Thalita': 'url(#colorThalita)',
+    'Diretoria': 'url(#colorDiretoria)',
+    'Outros': 'url(#colorOutros)'
   };
 
   // Custom 3D Bar Shape
@@ -489,7 +507,7 @@ function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
     const depth = 8;
     if (height === 0 || isNaN(height)) return null;
     return (
-      <g>
+      <g filter="url(#dropShadow)">
         <rect x={x} y={y} width={width} height={height} fill={fill} />
         <path d={`M${x},${y} L${x + depth},${y - depth} L${x + width + depth},${y - depth} L${x + width},${y} Z`} fill={fill} filter="brightness(1.2)" />
         <path d={`M${x + width},${y} L${x + width + depth},${y - depth} L${x + width + depth},${y + height - depth} L${x + width},${y + height} Z`} fill={fill} filter="brightness(0.8)" />
@@ -501,6 +519,9 @@ function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
     <div className="space-y-8">
       <svg width="0" height="0">
         <defs>
+          <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.15" />
+          </filter>
           <linearGradient id="colorRealizado" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor="#FACC15" />
             <stop offset="100%" stopColor="#ca8a04" />
@@ -521,12 +542,20 @@ function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
             <stop offset="0%" stopColor="#ec4899" />
             <stop offset="100%" stopColor="#be185d" />
           </linearGradient>
+          <linearGradient id="colorDiretoria" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#475569" />
+            <stop offset="100%" stopColor="#1e293b" />
+          </linearGradient>
+          <linearGradient id="colorOutros" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#8b5cf6" />
+            <stop offset="100%" stopColor="#6d28d9" />
+          </linearGradient>
         </defs>
       </svg>
 
       <div className="grid grid-cols-1 gap-6">
         <StatCard 
-          label="Total de Vendas (Geral)" 
+          label="Total de Vendas (JCB)" 
           value={`${salesCount} unidades`}
           icon={<DollarSign className="text-yellow-400" />}
           trend={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalSales)}
@@ -540,27 +569,21 @@ function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
           </button>
           <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
             <Users size={20} className="text-yellow-500" />
-            Vendas por Consultor (Máquinas)
+            Vendas por Consultor (Evolução Mensal)
           </h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salesBySellerQty} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <BarChart data={salesByMonthAndSeller} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} />
                 <Tooltip 
                   cursor={{ fill: '#f8f9fa' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                 />
                 <Legend verticalAlign="top" align="right" iconType="circle" />
-                <Bar shape={<ThreeDBar />} name="Realizado" dataKey="realizado">
-                  {salesBySellerQty.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={sellerColors[entry.name] || 'url(#colorRealizado)'} />
-                  ))}
-                  <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#52525b' }} />
-                </Bar>
-                <Bar shape={<ThreeDBar />} name="Meta" dataKey="meta" fill="url(#colorMeta)">
-                  <LabelList dataKey="meta" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#52525b' }} />
-                </Bar>
+                {SELLERS.map(seller => (
+                  <Bar key={seller} shape={<ThreeDBar />} name={seller} dataKey={seller} stackId="a" fill={sellerColors[seller] || 'url(#colorRealizado)'} />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -786,7 +809,7 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
                         {new Date(sale.data).toLocaleDateString('pt-BR')}
                       </td>
                       <td className={cn("px-6 py-4 font-medium", sale.recebidoGerente && "line-through")}>{sale.cliente}</td>
-                      <td className={cn("px-6 py-4 text-sm text-zinc-600", sale.recebidoGerente && "line-through")}>{sale.equipamento}</td>
+                      <td className={cn("px-6 py-4 text-sm text-zinc-600", sale.recebidoGerente && "line-through")}>{sale.equipamento || '-'}</td>
                       <td className={cn("px-6 py-4", sale.recebidoGerente && "line-through")}>
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.valor)}
                       </td>
@@ -845,38 +868,47 @@ function StatCard({ label, value, icon, trend }: { label: string, value: string,
 // --- VENDAS TAB ---
 function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale[], onAddSale: (sale: any) => void, onEditSale: (sale: Sale) => void, onDeleteSale: (id: string) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Sale>>({
-    marca: MARCAS[0],
+  const [successMessage, setSuccessMessage] = useState('');
+  
+  const initialFormState: Partial<Sale> = {
+    marca: '' as Marca,
     data: new Date().toISOString().split('T')[0],
     eventoSyonet: '',
     cliente: '',
-    equipamento: EQUIPMENTS[0],
-    valor: 0,
-    vendedor: SELLERS[0],
-    condicao: CONDITIONS[0],
+    equipamento: '',
+    valor: '' as unknown as number,
+    vendedor: '' as Seller,
+    condicao: '' as Condition,
     notaFiscal: '',
-    quantidadeCota: 1
-  });
+    quantidadeCota: '' as unknown as number,
+    observacao: ''
+  };
+
+  const [formData, setFormData] = useState<Partial<Sale>>(initialFormState);
 
   const handleEdit = (sale: Sale) => {
     setEditingId(sale.id);
     setFormData({
-      marca: sale.marca || 'JCB',
+      marca: sale.marca || '',
       data: sale.data ? sale.data.split('T')[0] : new Date().toISOString().split('T')[0],
       eventoSyonet: sale.eventoSyonet || '',
       cliente: sale.cliente || '',
-      equipamento: sale.equipamento || EQUIPMENTS[0],
-      valor: sale.valor || 0,
-      vendedor: sale.vendedor || SELLERS[0],
-      condicao: sale.condicao || CONDITIONS[0],
+      equipamento: sale.equipamento || '',
+      valor: sale.valor || ('' as unknown as number),
+      vendedor: sale.vendedor || '',
+      condicao: sale.condicao || '',
       notaFiscal: sale.notaFiscal || '',
-      quantidadeCota: sale.quantidadeCota || 1
+      quantidadeCota: sale.quantidadeCota || ('' as unknown as number),
+      observacao: sale.observacao || ''
     });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.cliente || !formData.valor) return;
+    if (!formData.marca || !formData.cliente || !formData.valor || !formData.vendedor) {
+      alert("Preencha todos os campos obrigatórios (Marca, Cliente, Valor e Vendedor).");
+      return;
+    }
     
     const dataIso = new Date(formData.data || new Date()).toISOString();
 
@@ -888,6 +920,10 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
       vendedor: formData.vendedor,
     };
 
+    if (formData.vendedor === 'Outros') {
+      saleData.observacao = formData.observacao;
+    }
+
     if (formData.marca === 'JCB') {
       saleData.eventoSyonet = formData.eventoSyonet;
       saleData.equipamento = formData.equipamento;
@@ -895,7 +931,6 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
       saleData.condicao = formData.condicao;
     } else if (formData.marca === 'EP' || formData.marca === 'Clark') {
       saleData.eventoSyonet = formData.eventoSyonet;
-      saleData.equipamento = formData.equipamento;
       saleData.notaFiscal = formData.notaFiscal;
     } else if (formData.marca === 'Consórcio') {
       saleData.quantidadeCota = Number(formData.quantidadeCota);
@@ -909,18 +944,9 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
       onAddSale(saleData);
     }
     
-    setFormData({
-      marca: MARCAS[0],
-      data: new Date().toISOString().split('T')[0],
-      eventoSyonet: '',
-      cliente: '',
-      equipamento: EQUIPMENTS[0],
-      valor: 0,
-      vendedor: SELLERS[0],
-      condicao: CONDITIONS[0],
-      notaFiscal: '',
-      quantidadeCota: 1
-    });
+    setFormData(initialFormState);
+    setSuccessMessage('Venda salva com sucesso!');
+    setTimeout(() => setSuccessMessage(''), 3000);
   };
 
   const sortedSales = [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
@@ -934,23 +960,34 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
             {editingId ? <Edit2 size={20} className="text-yellow-500" /> : <Plus size={20} className="text-yellow-500" />}
             {editingId ? 'Editar Venda' : 'Lançar Nova Venda'}
           </h3>
+          
+          {successMessage && (
+            <div className="mb-4 p-3 bg-green-100 text-green-700 border border-green-200 rounded-lg text-sm font-bold flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              {successMessage}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
-            <InputGroup label="Marca">
+            <InputGroup label="Marca *">
               <select 
                 value={formData.marca}
                 onChange={e => setFormData({...formData, marca: e.target.value as Marca})}
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                required
               >
+                <option value="" disabled>Selecione a marca</option>
                 {MARCAS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </InputGroup>
 
-            <InputGroup label="Data">
+            <InputGroup label="Data *">
               <input 
                 type="date" 
                 value={formData.data}
                 onChange={e => setFormData({...formData, data: e.target.value})}
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                required
               />
             </InputGroup>
 
@@ -966,70 +1003,79 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
               </InputGroup>
             )}
 
-            <InputGroup label="Cliente">
+            <InputGroup label="Cliente *">
               <input 
                 type="text" 
                 value={formData.cliente}
                 onChange={e => setFormData({...formData, cliente: e.target.value})}
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
                 placeholder="Nome do cliente"
+                required
               />
             </InputGroup>
 
-            {formData.marca !== 'Consórcio' && (
-              <InputGroup label="Equipamento">
-                {formData.marca === 'JCB' ? (
-                  <select 
-                    value={formData.equipamento}
-                    onChange={e => setFormData({...formData, equipamento: e.target.value})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
-                  >
-                    {EQUIPMENTS.filter(e => e !== 'Consórcio').map(e => <option key={e} value={e}>{e}</option>)}
-                  </select>
-                ) : (
-                  <input 
-                    type="text" 
-                    value={formData.equipamento}
-                    onChange={e => setFormData({...formData, equipamento: e.target.value})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
-                    placeholder="Nome do equipamento"
-                  />
-                )}
+            {formData.marca === 'JCB' && (
+              <InputGroup label="Equipamento *">
+                <select 
+                  value={formData.equipamento}
+                  onChange={e => setFormData({...formData, equipamento: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                  required
+                >
+                  <option value="" disabled>Selecione o equipamento</option>
+                  {EQUIPMENTS.filter(e => e !== 'Consórcio').map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
               </InputGroup>
             )}
 
             {formData.marca === 'Consórcio' && (
-              <InputGroup label="Quantidade de Cotas">
+              <InputGroup label="Quantidade de Cotas *">
                 <input 
                   type="number" 
                   min="1"
                   value={formData.quantidadeCota}
                   onChange={e => setFormData({...formData, quantidadeCota: Number(e.target.value)})}
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                  required
                 />
               </InputGroup>
             )}
 
-            <InputGroup label="Valor (R$)">
+            <InputGroup label="Valor (R$) *">
               <input 
                 type="number" 
                 step="0.01"
-                value={formData.valor || ''}
-                onChange={e => setFormData({...formData, valor: e.target.value ? Number(e.target.value) : 0})}
+                value={formData.valor}
+                onChange={e => setFormData({...formData, valor: e.target.value ? Number(e.target.value) : ('' as unknown as number)})}
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
                 placeholder="0,00"
+                required
               />
             </InputGroup>
 
-            <InputGroup label="Vendedor">
+            <InputGroup label="Vendedor *">
               <select 
                 value={formData.vendedor}
                 onChange={e => setFormData({...formData, vendedor: e.target.value as Seller})}
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                required
               >
+                <option value="" disabled>Selecione o vendedor</option>
                 {SELLERS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </InputGroup>
+
+            {formData.vendedor === 'Outros' && (
+              <InputGroup label="Observação (Nome do Vendedor)">
+                <input 
+                  type="text" 
+                  value={formData.observacao}
+                  onChange={e => setFormData({...formData, observacao: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                  placeholder="Nome ou detalhes do vendedor"
+                />
+              </InputGroup>
+            )}
 
             {formData.marca !== 'Consórcio' && (
               <InputGroup label="Nota Fiscal">
@@ -1050,6 +1096,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                   onChange={e => setFormData({...formData, condicao: e.target.value as Condition})}
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
                 >
+                  <option value="" disabled>Selecione a condição</option>
                   {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </InputGroup>
@@ -1068,18 +1115,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                   type="button"
                   onClick={() => {
                     setEditingId(null);
-                    setFormData({
-                      marca: MARCAS[0],
-                      data: new Date().toISOString().split('T')[0],
-                      eventoSyonet: '',
-                      cliente: '',
-                      equipamento: EQUIPMENTS[0],
-                      valor: 0,
-                      vendedor: SELLERS[0],
-                      condicao: CONDITIONS[0],
-                      notaFiscal: '',
-                      quantidadeCota: 1
-                    });
+                    setFormData(initialFormState);
                   }}
                   className="px-4 bg-zinc-200 text-zinc-700 font-bold rounded-xl hover:bg-zinc-300 transition-colors"
                 >

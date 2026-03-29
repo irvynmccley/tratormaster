@@ -1,15 +1,15 @@
 export type Equipment = 
-  | 'BHL- Retro 3CX'
-  | 'EXC -ESCAVADEIRA'
-  | 'WLS -Pá carregadeira'
-  | 'TH -MANIPULADOR'
-  | 'MIN -MINI ESCAVADEIRA'
-  | 'SSL-MINI CARREGADEIRA'
-  | 'CPTN-ROLO COMPACTADOR'
+  | 'Retro 3CX (BHL)'
+  | 'ESCAVADEIRA (EXC)'
+  | 'PÁ CARREGADEIRA (WLS)'
+  | 'MANIPULADOR (TH)'
+  | 'MINI ESCAVADEIRA (MIN)'
+  | 'MINI CARREGADEIRA (SSL)'
+  | 'ROLO COMPACTADOR (CPTN)'
   | 'Consórcio'
   | string;
 
-export type Seller = 'Anderson' | 'Carlos' | 'Thalita';
+export type Seller = 'Anderson' | 'Carlos' | 'Thalita' | 'Diretoria' | 'Outros';
 
 export type Condition = 
   | 'Financiamento - Banco de Fabrica'
@@ -39,6 +39,9 @@ export interface Sale {
   
   // Consórcio only
   quantidadeCota?: number;
+  
+  // Outros only
+  observacao?: string;
   
   recebidoGerente?: boolean;
 }

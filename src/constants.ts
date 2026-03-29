@@ -1,17 +1,17 @@
 import { Equipment, Seller, Condition, Marca } from './types';
 
 export const EQUIPMENTS: string[] = [
-  'BHL- Retro 3CX',
-  'EXC -ESCAVADEIRA',
-  'WLS -Pá carregadeira',
-  'TH -MANIPULADOR',
-  'MIN -MINI ESCAVADEIRA',
-  'SSL-MINI CARREGADEIRA',
-  'CPTN-ROLO COMPACTADOR',
+  'Retro 3CX (BHL)',
+  'ESCAVADEIRA (EXC)',
+  'PÁ CARREGADEIRA (WLS)',
+  'MANIPULADOR (TH)',
+  'MINI ESCAVADEIRA (MIN)',
+  'MINI CARREGADEIRA (SSL)',
+  'ROLO COMPACTADOR (CPTN)',
   'Consórcio'
 ];
 
-export const SELLERS: Seller[] = ['Anderson', 'Carlos', 'Thalita'];
+export const SELLERS: Seller[] = ['Anderson', 'Carlos', 'Thalita', 'Diretoria', 'Outros'];
 
 export const CONDITIONS: Condition[] = [
   'Financiamento - Banco de Fabrica',
