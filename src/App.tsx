@@ -60,10 +60,13 @@ export default function App() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [goals, setGoals] = useState<Goal[]>(INITIAL_GOALS);
   const [isLoading, setIsLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'local' | 'error'>('local');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabase) {
       console.warn('Supabase not configured. Using local storage as fallback.');
+      setConnectionStatus('local');
       const savedSales = localStorage.getItem('trator_sales');
       if (savedSales) setSales(JSON.parse(savedSales));
       
@@ -76,6 +79,7 @@ export default function App() {
 
     const fetchData = async () => {
       try {
+        setConnectionStatus('connected');
         // Fetch Sales
         const { data: salesData, error: salesError } = await supabase
           .from('sales')
@@ -124,8 +128,14 @@ export default function App() {
           });
           setGoals(mergedGoals);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
+        setConnectionStatus('error');
+        setErrorMessage(error.message || 'Erro ao conectar com o banco de dados.');
+        
+        // Fallback to local storage if supabase fails
+        const savedSales = localStorage.getItem('trator_sales');
+        if (savedSales) setSales(JSON.parse(savedSales));
       } finally {
         setIsLoading(false);
       }
@@ -280,6 +290,17 @@ export default function App() {
             <div>
               <h1 className="text-xl font-bold tracking-tighter uppercase">TratorMaster</h1>
               <p className="text-[10px] text-yellow-400 font-medium tracking-widest uppercase">Sempre perto de você</p>
+              <div className="flex items-center gap-1 mt-1">
+                <div className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  connectionStatus === 'connected' ? "bg-green-500" : 
+                  connectionStatus === 'local' ? "bg-yellow-500" : "bg-red-500"
+                )} />
+                <span className="text-[8px] text-zinc-400 uppercase font-bold">
+                  {connectionStatus === 'connected' ? "Sincronizado" : 
+                   connectionStatus === 'local' ? "Modo Local (Não Sincroniza)" : "Erro de Conexão"}
+                </span>
+              </div>
             </div>
           </div>
           
@@ -319,6 +340,13 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto p-4 md:p-8">
+        {errorMessage && (
+          <div className="mb-6 p-4 bg-red-100 border border-red-200 text-red-700 rounded-xl text-sm flex flex-col gap-2">
+            <p className="font-bold">Atenção: Problema na Sincronização</p>
+            <p>{errorMessage}</p>
+            <p className="text-xs">Os dados estão sendo salvos apenas neste dispositivo. Verifique as chaves do Supabase nas configurações.</p>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           {activeTab === 'dashboard' && (
             <motion.div 
