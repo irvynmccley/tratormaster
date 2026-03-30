@@ -49,7 +49,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import html2canvas from 'html2canvas';
+import { toBlob, toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -564,16 +564,11 @@ function DashboardTab({
 }) {
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
-  
-  const monthlySales = sales.filter(s => {
-    const d = new Date(s.data);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-  });
 
   // 1. Performance por Equipamento (Empresa) - Realizado vs Meta Empresa
   const equipmentPerformance = useMemo(() => {
     return EQUIPMENTS.filter(e => e !== 'Consórcio').map(equip => {
-      const realized = monthlySales.filter(s => s.equipamento === equip).length;
+      const realized = sales.filter(s => s.equipamento === equip && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
       const meta = companyGoals.find(g => g.equipamento === equip)?.meta || 0;
       return {
         name: equip,
@@ -581,54 +576,97 @@ function DashboardTab({
         meta: meta
       };
     }).filter(e => e.meta > 0 || e.realizado > 0);
-  }, [monthlySales, companyGoals]);
+  }, [sales, companyGoals]);
 
   // 2. Performance por Consultor (Realizado vs Meta Individual)
   const consultantPerformance = useMemo(() => {
-    const targetSellers = ['Anderson', 'Carlos', 'Thalita'];
-    return targetSellers.map(seller => {
-      const realized = monthlySales.filter(s => s.vendedor === seller && s.equipamento !== 'Consórcio').length;
+    return SELLERS.map(seller => {
+      const realized = sales.filter(s => 
+        (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
+        (s.marca || 'JCB').trim().toUpperCase() === 'JCB'
+      ).length;
       const meta = goals.filter(g => g.vendedor === seller && g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
       return {
         name: seller,
         realizado: realized,
         meta: meta
       };
-    });
-  }, [monthlySales, goals]);
+    }).filter(p => p.meta > 0 || p.realizado > 0);
+  }, [sales, goals]);
 
   // 3. Acompanhamento Mensal da Empresa (Realizado vs Meta Total)
   const companyMonthlyProgress = useMemo(() => {
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    const totalMonthlyMeta = companyGoals.reduce((acc, g) => acc + g.meta, 0);
+    const totalCompanyMeta = companyGoals.reduce((acc, g) => acc + g.meta, 0);
 
-    return months.map((month, idx) => {
+    const progress: any[] = months.map((month, idx) => {
       const realized = sales.filter(s => {
         const d = new Date(s.data);
-        return d.getMonth() === idx && d.getFullYear() === currentYear && s.equipamento !== 'Consórcio';
+        return d.getUTCMonth() === idx && d.getUTCFullYear() === currentYear && (s.marca || 'JCB').trim().toUpperCase() === 'JCB';
       }).length;
       return {
         name: month,
-        realizado: realized,
-        meta: totalMonthlyMeta
+        realizado: realized
       };
     });
-  }, [sales, companyGoals]);
+
+    const totalRealized = progress.reduce((acc, p) => acc + p.realizado, 0);
+
+    progress.push({
+      name: 'Total',
+      realizado: totalRealized,
+      metaTotal: totalCompanyMeta
+    });
+
+    return progress;
+  }, [sales, companyGoals, currentYear]);
 
   const totalCompanyMeta = companyGoals.reduce((acc, g) => acc + g.meta, 0);
-  const totalRealized = monthlySales.filter(s => s.equipamento !== 'Consórcio').length;
+  const totalRealized = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
   const achievementPercent = totalCompanyMeta > 0 ? (totalRealized / totalCompanyMeta) * 100 : 0;
 
   const handleShare = async (elementId: string, title: string) => {
     const element = document.getElementById(elementId);
     if (!element) return;
     try {
-      const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
-      const image = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = image;
-      link.download = `${title}.png`;
-      link.click();
+      const blob = await toBlob(element, { backgroundColor: '#ffffff', pixelRatio: 2 });
+      if (!blob) return;
+      
+      const file = new File([blob], `${title}.png`, { type: 'image/png' });
+      
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            title: title,
+            text: `Confira o gráfico: ${title}`,
+            files: [file]
+          });
+          return;
+        } catch (shareError) {
+          console.error('Share failed', shareError);
+        }
+      }
+      
+      // Fallback se a Web Share API não suportar arquivos (ex: Desktop)
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'image/png': blob
+          })
+        ]);
+        alert('Imagem copiada! Cole no WhatsApp.');
+        window.open(`https://wa.me/?text=Confira%20o%20gr%C3%A1fico%20${title}`, '_blank');
+      } catch (clipboardError) {
+        console.error('Clipboard copy failed', clipboardError);
+        // Fallback para download
+        const dataUrl = await toPng(element, { backgroundColor: '#ffffff', pixelRatio: 2 });
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `${title}.png`;
+        link.click();
+        alert('Imagem baixada! Anexe no WhatsApp.');
+        window.open(`https://wa.me/?text=Confira%20o%20gr%C3%A1fico%20${title}`, '_blank');
+      }
     } catch (err) {
       console.error('Failed to share', err);
     }
@@ -712,8 +750,11 @@ function DashboardTab({
                   dataKey="name" 
                   axisLine={false} 
                   tickLine={false} 
-                  tick={{ fill: '#a1a1aa', fontSize: 10, fontWeight: 800 }}
+                  tick={{ fill: '#000000', fontSize: 9, fontWeight: 800 }}
                   interval={0}
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
                 />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
@@ -771,10 +812,9 @@ function DashboardTab({
         <div id="chart-monthly" className="bg-white p-8 rounded-[2.5rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 space-y-8 lg:col-span-2">
           <div className="flex justify-between items-center">
             <div className="space-y-1">
-              <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Acompanhamento Mensal da Empresa</h4>
-              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">Realizado vs Meta Total Mensal</p>
+              <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Realizado x Meta Filial VDC</h4>
             </div>
-            <button onClick={() => handleShare('chart-monthly', 'Acompanhamento_Mensal')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
+            <button onClick={() => handleShare('chart-monthly', 'Realizado_x_Meta')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
               <Share2 size={18} className="text-zinc-400" />
             </button>
           </div>
@@ -796,7 +836,9 @@ function DashboardTab({
                 <Bar dataKey="realizado" name="Vendas Realizadas" fill="#18181b" radius={[6, 6, 0, 0]} barSize={40}>
                   <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#18181b' }} />
                 </Bar>
-                <Line type="monotone" dataKey="meta" name="Meta Mensal" stroke="#facc15" strokeWidth={4} dot={{ r: 6, fill: '#facc15', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+                <Bar dataKey="metaTotal" name="Meta Total" fill="#facc15" radius={[6, 6, 0, 0]} barSize={40}>
+                  <LabelList dataKey="metaTotal" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#eab308' }} />
+                </Bar>
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -826,9 +868,9 @@ const MANAGER_COMMISSION_RATE = 0.002; // 0.2%
 function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onToggleRecebido: (id: string) => void }) {
   const totalSalesValue = sales.reduce((acc, s) => acc + s.valor, 0);
   
-  const salesJCB = sales.filter(s => s.marca === 'JCB').reduce((acc, s) => acc + s.valor, 0);
-  const salesEP = sales.filter(s => s.marca === 'EP').reduce((acc, s) => acc + s.valor, 0);
-  const salesClark = sales.filter(s => s.marca === 'Clark').reduce((acc, s) => acc + s.valor, 0);
+  const salesJCB = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB').reduce((acc, s) => acc + s.valor, 0);
+  const salesEP = sales.filter(s => (s.marca || '').trim().toUpperCase() === 'EP').reduce((acc, s) => acc + s.valor, 0);
+  const salesClark = sales.filter(s => (s.marca || '').trim().toUpperCase() === 'CLARK').reduce((acc, s) => acc + s.valor, 0);
 
   const pendingSales = sales.filter(s => !s.recebidoGerente);
   const totalManagerCommission = pendingSales.reduce((acc, s) => acc + (s.valor * MANAGER_COMMISSION_RATE), 0);
@@ -946,6 +988,13 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
 function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale[], onAddSale: (sale: any) => void, onEditSale: (sale: Sale) => void, onDeleteSale: (id: string) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [filters, setFilters] = useState({
+    search: '',
+    vendedor: 'all',
+    marca: 'all',
+    equipamento: 'all',
+    month: 'all'
+  });
   
   const initialFormState: Partial<Sale> = {
     marca: '' as Marca,
@@ -1026,7 +1075,28 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
     setTimeout(() => setSuccessMessage(''), 3000);
   };
 
-  const sortedSales = [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+  const availableMonths = Array.from(new Set(sales.map(s => {
+    const d = new Date(s.data);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  }))).sort().reverse();
+
+  const filteredSales = sales.filter(s => {
+    const matchesSearch = s.cliente.toLowerCase().includes(filters.search.toLowerCase());
+    const matchesVendedor = filters.vendedor === 'all' || s.vendedor === filters.vendedor;
+    const matchesMarca = filters.marca === 'all' || (s.marca || 'JCB').trim().toUpperCase() === filters.marca.toUpperCase();
+    const matchesEquipamento = filters.equipamento === 'all' || s.equipamento === filters.equipamento;
+    
+    let matchesMonth = true;
+    if (filters.month !== 'all') {
+      const d = new Date(s.data);
+      const monthStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      matchesMonth = monthStr === filters.month;
+    }
+    
+    return matchesSearch && matchesVendedor && matchesMarca && matchesEquipamento && matchesMonth;
+  });
+
+  const sortedSales = [...filteredSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1205,13 +1275,94 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
       </div>
 
       {/* List Section */}
-      <div className="lg:col-span-2 space-y-8">
+      <div className="lg:col-span-2 space-y-6">
+        {/* Filters */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 space-y-4">
+          <div className="flex items-center gap-2 text-zinc-900 font-bold mb-2">
+            <BarChart3 size={18} className="text-yellow-500" />
+            Filtros de Venda
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Buscar Cliente</label>
+              <input 
+                type="text"
+                placeholder="Nome do cliente..."
+                value={filters.search}
+                onChange={e => setFilters({...filters, search: e.target.value})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Vendedor</label>
+              <select 
+                value={filters.vendedor}
+                onChange={e => setFilters({...filters, vendedor: e.target.value})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+              >
+                <option value="all">Todos</option>
+                {SELLERS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Marca</label>
+              <select 
+                value={filters.marca}
+                onChange={e => setFilters({...filters, marca: e.target.value})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+              >
+                <option value="all">Todas</option>
+                {MARCAS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Equipamento</label>
+              <select 
+                value={filters.equipamento}
+                onChange={e => setFilters({...filters, equipamento: e.target.value})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+              >
+                <option value="all">Todos</option>
+                {EQUIPMENTS.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Mês/Ano</label>
+              <select 
+                value={filters.month}
+                onChange={e => setFilters({...filters, month: e.target.value})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+              >
+                <option value="all">Todos</option>
+                {availableMonths.map(m => {
+                  const [year, month] = m.split('-');
+                  const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleString('pt-BR', { month: 'long' });
+                  return (
+                    <option key={m} value={m}>
+                      {monthName.charAt(0).toUpperCase() + monthName.slice(1)} {year}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+          {(filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.month !== 'all') && (
+            <button 
+              onClick={() => setFilters({ search: '', vendedor: 'all', marca: 'all', equipamento: 'all', month: 'all' })}
+              className="text-[10px] font-bold uppercase tracking-widest text-yellow-600 hover:text-yellow-700 underline"
+            >
+              Limpar Filtros
+            </button>
+          )}
+        </div>
+
         {/* Sales List */}
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-100 overflow-hidden">
           <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
             <h3 className="font-bold flex items-center gap-2">
               <TrendingUp size={20} className="text-yellow-500" />
-              Últimas Vendas
+              {filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.month !== 'all' ? 'Vendas Filtradas' : 'Últimas Vendas'}
+              <span className="text-xs text-zinc-400 font-normal ml-2">({sortedSales.length} registros)</span>
             </h3>
           </div>
           <div className="overflow-x-auto">
@@ -1230,7 +1381,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
               <tbody className="divide-y divide-zinc-100">
                 {sortedSales.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-zinc-400 italic">Nenhuma venda registrada ainda.</td>
+                    <td colSpan={7} className="px-6 py-12 text-center text-zinc-400 italic">Nenhuma venda encontrada com os filtros atuais.</td>
                   </tr>
                 ) : (
                   sortedSales.map(sale => (
@@ -1239,7 +1390,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                         {new Date(sale.data).toLocaleDateString('pt-BR')}
                       </td>
                       <td className="px-6 py-4">
-                        <span className="px-2 py-1 bg-zinc-100 rounded text-[10px] font-bold uppercase">{sale.marca || 'JCB'}</span>
+                        <span className="px-2 py-1 bg-zinc-100 rounded text-[10px] font-bold uppercase">{(sale.marca || 'JCB').trim().toUpperCase()}</span>
                       </td>
                       <td className="px-6 py-4 font-medium">{sale.cliente}</td>
                       <td className="px-6 py-4 text-sm text-zinc-600">
@@ -1325,7 +1476,7 @@ function MetasTab({
           const companyGoal = companyGoals.find(cg => cg.equipamento === equip)?.meta || 0;
           const individualGoals = goals.filter(g => g.equipamento === equip && targetSellers.includes(g.vendedor));
           const distributedTotal = individualGoals.reduce((acc, g) => acc + g.meta, 0);
-          const realized = sales.filter(s => s.equipamento === equip).length;
+          const realized = sales.filter(s => s.equipamento === equip && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
           const remaining = companyGoal - distributedTotal;
           
           return (
@@ -1406,7 +1557,11 @@ function MetasTab({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {targetSellers.map(seller => {
                     const goal = individualGoals.find(g => g.vendedor === seller);
-                    const sellerRealized = sales.filter(s => s.vendedor === seller && s.equipamento === equip).length;
+                    const sellerRealized = sales.filter(s => 
+                      (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
+                      s.equipamento === equip && 
+                      (s.marca || 'JCB').trim().toUpperCase() === 'JCB'
+                    ).length;
                     const progress = goal?.meta ? Math.min((sellerRealized / goal.meta) * 100, 100) : 0;
 
                     return (
@@ -1470,7 +1625,7 @@ function MetasTab({
 function KitsTab({ sales }: { sales: Sale[] }) {
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
 
-  const jcbSales = sales.filter(s => s.marca === 'JCB').map(s => ({
+  const jcbSales = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB').map(s => ({
     id: s.id,
     data: s.data,
     eventoSyonet: s.eventoSyonet || '',
@@ -1479,17 +1634,17 @@ function KitsTab({ sales }: { sales: Sale[] }) {
     vendedor: s.vendedor,
   })).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 
-  // Extract unique months for the filter
+  // Extract unique months for the filter using UTC to avoid timezone shifts
   const availableMonths = Array.from(new Set(jcbSales.map(s => {
     const d = new Date(s.data);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   }))).sort().reverse();
 
   const filteredKits = selectedMonth === 'all' 
     ? jcbSales 
     : jcbSales.filter(s => {
         const d = new Date(s.data);
-        const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const monthStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
         return monthStr === selectedMonth;
       });
 
