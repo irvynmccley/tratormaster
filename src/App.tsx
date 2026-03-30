@@ -24,7 +24,9 @@ import {
   FileDown,
   Calendar,
   Award,
-  BarChart3
+  BarChart3,
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -94,7 +96,11 @@ export default function App() {
           .select('*')
           .order('data', { ascending: false });
           
-        if (salesError) throw salesError;
+        if (salesError) {
+          console.error('Error fetching sales:', salesError);
+          // If sales fail, we might want to stop or continue with local
+          throw salesError;
+        }
 
         if (salesData) {
           const formattedSales: Sale[] = salesData.map(s => ({
@@ -112,58 +118,86 @@ export default function App() {
             observacao: s.observacao,
             recebidoGerente: s.recebido_gerente
           }));
-          setSales(formattedSales);
+          
+          // Merge with local sales that might not have been synced
+          const savedSales = localStorage.getItem('trator_sales');
+          if (savedSales) {
+            const localSales: Sale[] = JSON.parse(savedSales);
+            const unsyncedSales = localSales.filter(ls => !formattedSales.some(fs => fs.id === ls.id));
+            if (unsyncedSales.length > 0) {
+              console.log('Merging unsynced local sales:', unsyncedSales.length);
+              setSales([...unsyncedSales, ...formattedSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()));
+            } else {
+              setSales(formattedSales);
+            }
+          } else {
+            setSales(formattedSales);
+          }
         }
 
         // Fetch Goals
-        const { data: goalsData, error: goalsError } = await supabase
-          .from('goals')
-          .select('*');
-          
-        if (goalsError) throw goalsError;
-
-        if (goalsData && goalsData.length > 0) {
-          const formattedGoals: Goal[] = goalsData.map(g => ({
-            vendedor: g.vendedor as Seller,
-            equipamento: g.equipamento as Equipment,
-            meta: Number(g.meta)
-          }));
-          
-          // Merge fetched goals with INITIAL_GOALS to ensure all combinations exist
-          const mergedGoals = INITIAL_GOALS.map(initialGoal => {
-            const fetchedGoal = formattedGoals.find(g => g.vendedor === initialGoal.vendedor && g.equipamento === initialGoal.equipamento);
-            return fetchedGoal || initialGoal;
-          });
-          setGoals(mergedGoals);
+        try {
+          const { data: goalsData, error: goalsError } = await supabase
+            .from('goals')
+            .select('*');
+            
+          if (goalsError) {
+            console.warn('Error fetching goals, using defaults:', goalsError);
+          } else if (goalsData && goalsData.length > 0) {
+            const formattedGoals: Goal[] = goalsData.map(g => ({
+              vendedor: g.vendedor as Seller,
+              equipamento: g.equipamento as Equipment,
+              meta: Number(g.meta)
+            }));
+            
+            const mergedGoals = INITIAL_GOALS.map(initialGoal => {
+              const fetchedGoal = formattedGoals.find(g => g.vendedor === initialGoal.vendedor && g.equipamento === initialGoal.equipamento);
+              return fetchedGoal || initialGoal;
+            });
+            setGoals(mergedGoals);
+          }
+        } catch (e) {
+          console.warn('Failed to process goals:', e);
         }
 
         // Fetch Company Goals
-        const { data: companyGoalsData, error: companyGoalsError } = await supabase
-          .from('company_goals')
-          .select('*');
-          
-        if (companyGoalsError) throw companyGoalsError;
-
-        if (companyGoalsData && companyGoalsData.length > 0) {
-          const formattedCompanyGoals: CompanyGoal[] = companyGoalsData.map(g => ({
-            equipamento: g.equipamento as Equipment,
-            meta: Number(g.meta)
-          }));
-          
-          const mergedCompanyGoals = INITIAL_COMPANY_GOALS.map(initialGoal => {
-            const fetchedGoal = formattedCompanyGoals.find(g => g.equipamento === initialGoal.equipamento);
-            return fetchedGoal || initialGoal;
-          });
-          setCompanyGoals(mergedCompanyGoals);
+        try {
+          const { data: companyGoalsData, error: companyGoalsError } = await supabase
+            .from('company_goals')
+            .select('*');
+            
+          if (companyGoalsError) {
+            console.warn('Error fetching company goals, using defaults:', companyGoalsError);
+            // If it's just a missing table, don't block the whole app, but warn the user
+            if (companyGoalsError.code === 'PGRST116' || companyGoalsError.message.includes('schema cache') || companyGoalsError.message.includes('does not exist')) {
+              setErrorMessage('Atenção: Tabela "company_goals" não encontrada. As metas da empresa usarão valores padrão.');
+              // We don't set connectionStatus to 'error' here to keep the app functional
+            }
+          } else if (companyGoalsData && companyGoalsData.length > 0) {
+            const formattedCompanyGoals: CompanyGoal[] = companyGoalsData.map(g => ({
+              equipamento: g.equipamento as Equipment,
+              meta: Number(g.meta)
+            }));
+            
+            const mergedCompanyGoals = INITIAL_COMPANY_GOALS.map(initialGoal => {
+              const fetchedGoal = formattedCompanyGoals.find(g => g.equipamento === initialGoal.equipamento);
+              return fetchedGoal || initialGoal;
+            });
+            setCompanyGoals(mergedCompanyGoals);
+          }
+        } catch (e) {
+          console.warn('Failed to process company goals:', e);
         }
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionStatus('error');
         setErrorMessage(error.message || 'Erro ao conectar com o banco de dados.');
         
-        // Fallback to local storage if supabase fails
+        // Fallback to local storage ONLY if sales were not fetched
         const savedSales = localStorage.getItem('trator_sales');
-        if (savedSales) setSales(JSON.parse(savedSales));
+        if (savedSales && sales.length === 0) {
+          setSales(JSON.parse(savedSales));
+        }
       } finally {
         setIsLoading(false);
       }
@@ -173,16 +207,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!supabase) {
-      localStorage.setItem('trator_sales', JSON.stringify(sales));
-    }
+    localStorage.setItem('trator_sales', JSON.stringify(sales));
   }, [sales]);
 
   useEffect(() => {
-    if (!supabase) {
-      localStorage.setItem('trator_goals', JSON.stringify(goals));
-    }
+    localStorage.setItem('trator_goals', JSON.stringify(goals));
   }, [goals]);
+
+  useEffect(() => {
+    localStorage.setItem('trator_company_goals', JSON.stringify(companyGoals));
+  }, [companyGoals]);
 
   const addSale = async (newSale: Omit<Sale, 'id' | 'recebidoGerente'>) => {
     const saleId = crypto.randomUUID();
@@ -413,10 +447,25 @@ export default function App() {
           </div>
         )}
         {errorMessage && (
-          <div className="mb-6 p-4 bg-red-100 border border-red-200 text-red-700 rounded-xl text-sm flex flex-col gap-2">
-            <p className="font-bold">Atenção: Problema na Sincronização</p>
+          <div className="mb-6 p-4 bg-red-100 border border-red-200 text-red-700 rounded-xl text-sm flex flex-col gap-2 relative">
+            <button 
+              onClick={() => setErrorMessage(null)} 
+              className="absolute top-2 right-2 p-1 hover:bg-red-200 rounded-lg transition-colors"
+            >
+              <X size={14} />
+            </button>
+            <p className="font-bold flex items-center gap-2">
+              <AlertCircle size={16} />
+              Atenção: Problema na Sincronização
+            </p>
             <p>{errorMessage}</p>
             <p className="text-xs">Os dados estão sendo salvos apenas neste dispositivo. Verifique as chaves do Supabase nas configurações.</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="mt-2 text-xs font-bold underline hover:no-underline"
+            >
+              Tentar novamente
+            </button>
           </div>
         )}
         <AnimatePresence mode="wait">
