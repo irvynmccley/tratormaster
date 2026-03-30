@@ -52,6 +52,11 @@ export interface Goal {
   meta: number;
 }
 
+export interface CompanyGoal {
+  equipamento: string;
+  meta: number;
+}
+
 export interface Kit {
   id: string;
   data: string;

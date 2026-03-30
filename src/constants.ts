@@ -22,10 +22,15 @@ export const CONDITIONS: Condition[] = [
 
 export const MARCAS: Marca[] = ['JCB', 'EP', 'Consórcio', 'Clark'];
 
-export const INITIAL_GOALS = SELLERS.flatMap(seller => 
+export const INITIAL_GOALS = SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).flatMap(seller => 
   EQUIPMENTS.map(equip => ({
     vendedor: seller,
     equipamento: equip,
-    meta: 5 // Default meta
+    meta: 0
   }))
 );
+
+export const INITIAL_COMPANY_GOALS = EQUIPMENTS.map(equip => ({
+  equipamento: equip,
+  meta: 0
+}));

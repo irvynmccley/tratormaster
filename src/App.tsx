@@ -21,7 +21,10 @@ import {
   Download,
   FileText,
   FileSpreadsheet,
-  FileDown
+  FileDown,
+  Calendar,
+  Award,
+  BarChart3
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -35,7 +38,11 @@ import {
   PieChart,
   Pie,
   Legend,
-  LabelList
+  LabelList,
+  ComposedChart,
+  Line,
+  AreaChart,
+  Area
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -46,8 +53,8 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { supabase } from './lib/supabase';
-import { Sale, Goal, Seller, Equipment, Condition, Marca, Kit } from './types';
-import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, MARCAS } from './constants';
+import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit } from './types';
+import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS } from './constants';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -59,6 +66,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'vendas' | 'metas' | 'kits' | 'comissao'>('dashboard');
   const [sales, setSales] = useState<Sale[]>([]);
   const [goals, setGoals] = useState<Goal[]>(INITIAL_GOALS);
+  const [companyGoals, setCompanyGoals] = useState<CompanyGoal[]>(INITIAL_COMPANY_GOALS);
   const [isLoading, setIsLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'local' | 'error'>('local');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -127,6 +135,26 @@ export default function App() {
             return fetchedGoal || initialGoal;
           });
           setGoals(mergedGoals);
+        }
+
+        // Fetch Company Goals
+        const { data: companyGoalsData, error: companyGoalsError } = await supabase
+          .from('company_goals')
+          .select('*');
+          
+        if (companyGoalsError) throw companyGoalsError;
+
+        if (companyGoalsData && companyGoalsData.length > 0) {
+          const formattedCompanyGoals: CompanyGoal[] = companyGoalsData.map(g => ({
+            equipamento: g.equipamento as Equipment,
+            meta: Number(g.meta)
+          }));
+          
+          const mergedCompanyGoals = INITIAL_COMPANY_GOALS.map(initialGoal => {
+            const fetchedGoal = formattedCompanyGoals.find(g => g.equipamento === initialGoal.equipamento);
+            return fetchedGoal || initialGoal;
+          });
+          setCompanyGoals(mergedCompanyGoals);
         }
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
@@ -253,7 +281,7 @@ export default function App() {
         .select('id')
         .eq('vendedor', vendedor)
         .eq('equipamento', equipamento)
-        .single();
+        .maybeSingle();
 
       if (data) {
         // Update
@@ -266,6 +294,33 @@ export default function App() {
         const { error } = await supabase.from('goals')
           .insert([{ vendedor, equipamento, meta }]);
         if (error) console.error('Error inserting goal:', error);
+      }
+    }
+  };
+
+  const updateCompanyGoal = async (equipamento: Equipment, meta: number) => {
+    setCompanyGoals(prev => prev.map(g => 
+      (g.equipamento === equipamento) ? { ...g, meta } : g
+    ));
+
+    if (supabase) {
+      // Check if goal exists
+      const { data } = await supabase.from('company_goals')
+        .select('id')
+        .eq('equipamento', equipamento)
+        .maybeSingle();
+
+      if (data) {
+        // Update
+        const { error } = await supabase.from('company_goals')
+          .update({ meta })
+          .eq('id', data.id);
+        if (error) console.error('Error updating company goal:', error);
+      } else {
+        // Insert
+        const { error } = await supabase.from('company_goals')
+          .insert([{ equipamento, meta }]);
+        if (error) console.error('Error inserting company goal:', error);
       }
     }
   };
@@ -298,7 +353,7 @@ export default function App() {
                 )} />
                 <span className="text-[8px] text-zinc-400 uppercase font-bold">
                   {connectionStatus === 'connected' ? "Sincronizado" : 
-                   connectionStatus === 'local' ? "Modo Local (Não Sincroniza)" : "Erro de Conexão"}
+                   connectionStatus === 'local' ? "Modo Local (Configuração Pendente)" : "Erro de Conexão"}
                 </span>
               </div>
             </div>
@@ -340,6 +395,23 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto p-4 md:p-8">
+        {connectionStatus === 'local' && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-xl text-sm flex flex-col gap-2">
+            <p className="font-bold flex items-center gap-2">
+              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+              Sincronização Desativada (Modo Local)
+            </p>
+            <p>O aplicativo não encontrou as chaves de conexão com o Supabase. Os dados estão sendo salvos **apenas neste aparelho**.</p>
+            <div className="mt-2 p-3 bg-white/50 rounded-lg border border-yellow-100">
+              <p className="font-semibold mb-1">Como resolver:</p>
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li>No <strong>AI Studio</strong>: Vá em <strong>Secrets</strong> e adicione <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_ANON_KEY</code>.</li>
+                <li>Na <strong>Vercel</strong>: Vá em <strong>Settings &gt; Environment Variables</strong> e adicione as mesmas chaves.</li>
+                <li>Após adicionar, faça um <strong>Redeploy</strong> na Vercel ou reinicie o preview aqui.</li>
+              </ul>
+            </div>
+          </div>
+        )}
         {errorMessage && (
           <div className="mb-6 p-4 bg-red-100 border border-red-200 text-red-700 rounded-xl text-sm flex flex-col gap-2">
             <p className="font-bold">Atenção: Problema na Sincronização</p>
@@ -355,7 +427,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <DashboardTab sales={sales} goals={goals} />
+              <DashboardTab sales={sales} goals={goals} companyGoals={companyGoals} />
             </motion.div>
           )}
           {activeTab === 'vendas' && (
@@ -375,7 +447,13 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
             >
-              <MetasTab goals={goals} sales={sales} onUpdateGoal={updateGoal} />
+              <MetasTab 
+                goals={goals} 
+                companyGoals={companyGoals}
+                sales={sales} 
+                onUpdateGoal={updateGoal} 
+                onUpdateCompanyGoal={updateCompanyGoal}
+              />
             </motion.div>
           )}
           {activeTab === 'kits' && (
@@ -426,10 +504,71 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
 }
 
 // --- DASHBOARD TAB ---
-function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
-  const jcbSales = sales.filter(s => s.marca === 'JCB');
-  const totalSales = jcbSales.reduce((acc, s) => acc + s.valor, 0);
-  const salesCount = jcbSales.length;
+function DashboardTab({ 
+  sales, 
+  goals, 
+  companyGoals 
+}: { 
+  sales: Sale[], 
+  goals: Goal[], 
+  companyGoals: CompanyGoal[] 
+}) {
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  
+  const monthlySales = sales.filter(s => {
+    const d = new Date(s.data);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  // 1. Performance por Equipamento (Empresa) - Realizado vs Meta Empresa
+  const equipmentPerformance = useMemo(() => {
+    return EQUIPMENTS.filter(e => e !== 'Consórcio').map(equip => {
+      const realized = monthlySales.filter(s => s.equipamento === equip).length;
+      const meta = companyGoals.find(g => g.equipamento === equip)?.meta || 0;
+      return {
+        name: equip,
+        realizado: realized,
+        meta: meta
+      };
+    }).filter(e => e.meta > 0 || e.realizado > 0);
+  }, [monthlySales, companyGoals]);
+
+  // 2. Performance por Consultor (Realizado vs Meta Individual)
+  const consultantPerformance = useMemo(() => {
+    const targetSellers = ['Anderson', 'Carlos', 'Thalita'];
+    return targetSellers.map(seller => {
+      const realized = monthlySales.filter(s => s.vendedor === seller && s.equipamento !== 'Consórcio').length;
+      const meta = goals.filter(g => g.vendedor === seller && g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
+      return {
+        name: seller,
+        realizado: realized,
+        meta: meta
+      };
+    });
+  }, [monthlySales, goals]);
+
+  // 3. Acompanhamento Mensal da Empresa (Realizado vs Meta Total)
+  const companyMonthlyProgress = useMemo(() => {
+    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const totalMonthlyMeta = companyGoals.reduce((acc, g) => acc + g.meta, 0);
+
+    return months.map((month, idx) => {
+      const realized = sales.filter(s => {
+        const d = new Date(s.data);
+        return d.getMonth() === idx && d.getFullYear() === currentYear && s.equipamento !== 'Consórcio';
+      }).length;
+      return {
+        name: month,
+        realizado: realized,
+        meta: totalMonthlyMeta
+      };
+    });
+  }, [sales, companyGoals]);
+
+  const totalCompanyMeta = companyGoals.reduce((acc, g) => acc + g.meta, 0);
+  const totalRealized = monthlySales.filter(s => s.equipamento !== 'Consórcio').length;
+  const achievementPercent = totalCompanyMeta > 0 ? (totalRealized / totalCompanyMeta) * 100 : 0;
 
   const handleShare = async (elementId: string, title: string) => {
     const element = document.getElementById(elementId);
@@ -446,313 +585,188 @@ function DashboardTab({ sales, goals }: { sales: Sale[], goals: Goal[] }) {
     }
   };
 
-  const equipmentPerformance = useMemo(() => {
-    return EQUIPMENTS.filter(e => e !== 'Consórcio').map(equip => {
-      const realized = sales.filter(s => s.equipamento === equip).length;
-      const meta = goals.filter(g => g.equipamento === equip).reduce((acc, g) => acc + g.meta, 0);
-      return {
-        name: equip,
-        realizado: realized,
-        meta: meta
-      };
-    }).filter(e => e.meta > 0 || e.realizado > 0);
-  }, [sales, goals]);
-
-  const salesByMonthAndSeller = useMemo(() => {
-    const byMonthMap = new Map<string, { month: string, [seller: string]: any }>();
-    
-    // Filter out Consórcio
-    const validSales = sales.filter(s => s.equipamento !== 'Consórcio');
-    
-    validSales.forEach(s => {
-      const date = new Date(s.data);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const monthLabel = date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
-      
-      if (!byMonthMap.has(monthKey)) {
-        const initialData: any = { month: monthLabel };
-        SELLERS.forEach(seller => initialData[seller] = 0);
-        byMonthMap.set(monthKey, initialData);
-      }
-      
-      const monthData = byMonthMap.get(monthKey)!;
-      monthData[s.vendedor] = (monthData[s.vendedor] || 0) + 1;
-    });
-
-    return Array.from(byMonthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
-  }, [sales]);
-
-  const consorcioData = useMemo(() => {
-    const consorcioSales = sales.filter(s => s.equipamento === 'Consórcio');
-    
-    const bySeller = SELLERS.map(seller => {
-      const sellerSales = consorcioSales.filter(s => s.vendedor === seller);
-      const realized = sellerSales.reduce((acc, s) => acc + (s.quantidadeCota || 1), 0);
-      const meta = goals.filter(g => g.vendedor === seller && g.equipamento === 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
-      const valor = sellerSales.reduce((acc, s) => acc + s.valor, 0);
-      return { name: seller, realizado: realized, meta, valor };
-    });
-
-    const byMonthMap = new Map<string, { month: string, [seller: string]: any, totalQty: number, totalValue: number }>();
-    
-    consorcioSales.forEach(s => {
-      const date = new Date(s.data);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const monthLabel = date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
-      
-      if (!byMonthMap.has(monthKey)) {
-        byMonthMap.set(monthKey, { month: monthLabel, totalQty: 0, totalValue: 0 });
-      }
-      
-      const monthData = byMonthMap.get(monthKey)!;
-      const qtd = s.quantidadeCota || 1;
-      monthData[s.vendedor] = (monthData[s.vendedor] || 0) + qtd;
-      monthData.totalQty += qtd;
-      monthData.totalValue += s.valor;
-    });
-
-    const byMonth = Array.from(byMonthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
-    
-    const totalGeralValor = consorcioSales.reduce((acc, s) => acc + s.valor, 0);
-    const totalGeralQty = consorcioSales.reduce((acc, s) => acc + (s.quantidadeCota || 1), 0);
-    const totalGeralMeta = goals.filter(g => g.equipamento === 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
-
-    return { bySeller, byMonth, totalGeralValor, totalGeralQty, totalGeralMeta };
-  }, [sales, goals]);
-
-  // Colors for each consultant
-  const sellerColors: Record<string, string> = {
-    'Anderson': 'url(#colorAnderson)',
-    'Carlos': 'url(#colorCarlos)',
-    'Thalita': 'url(#colorThalita)',
-    'Diretoria': 'url(#colorDiretoria)',
-    'Outros': 'url(#colorOutros)'
-  };
-
-  // Custom 3D Bar Shape
-  const ThreeDBar = (props: any) => {
-    const { fill, x, y, width, height } = props;
-    const depth = 8;
-    if (height === 0 || isNaN(height)) return null;
-    return (
-      <g filter="url(#dropShadow)">
-        <rect x={x} y={y} width={width} height={height} fill={fill} />
-        <path d={`M${x},${y} L${x + depth},${y - depth} L${x + width + depth},${y - depth} L${x + width},${y} Z`} fill={fill} filter="brightness(1.2)" />
-        <path d={`M${x + width},${y} L${x + width + depth},${y - depth} L${x + width + depth},${y + height - depth} L${x + width},${y + height} Z`} fill={fill} filter="brightness(0.8)" />
-      </g>
-    );
-  };
-
   return (
-    <div className="space-y-8">
-      <svg width="0" height="0">
-        <defs>
-          <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.15" />
-          </filter>
-          <linearGradient id="colorRealizado" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#FACC15" />
-            <stop offset="100%" stopColor="#ca8a04" />
-          </linearGradient>
-          <linearGradient id="colorMeta" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#d4d4d8" />
-            <stop offset="100%" stopColor="#a1a1aa" />
-          </linearGradient>
-          <linearGradient id="colorAnderson" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#3b82f6" />
-            <stop offset="100%" stopColor="#1d4ed8" />
-          </linearGradient>
-          <linearGradient id="colorCarlos" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#10b981" />
-            <stop offset="100%" stopColor="#047857" />
-          </linearGradient>
-          <linearGradient id="colorThalita" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#ec4899" />
-            <stop offset="100%" stopColor="#be185d" />
-          </linearGradient>
-          <linearGradient id="colorDiretoria" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#475569" />
-            <stop offset="100%" stopColor="#1e293b" />
-          </linearGradient>
-          <linearGradient id="colorOutros" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#8b5cf6" />
-            <stop offset="100%" stopColor="#6d28d9" />
-          </linearGradient>
-        </defs>
-      </svg>
-
-      <div className="grid grid-cols-1 gap-6">
-        <StatCard 
-          label="Total de Vendas (JCB)" 
-          value={`${salesCount} unidades`}
-          icon={<DollarSign className="text-yellow-400" />}
-          trend={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalSales)}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div id="panel-consultores" className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 relative lg:col-span-2">
-          <button onClick={() => handleShare('panel-consultores', 'Vendas_Consultor')} className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors" title="Compartilhar">
-            <Share2 size={18} />
-          </button>
-          <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-            <Users size={20} className="text-yellow-500" />
-            Vendas por Consultor (Evolução Mensal)
-          </h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salesByMonthAndSeller} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} />
-                <Tooltip 
-                  cursor={{ fill: '#f8f9fa' }}
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-                <Legend verticalAlign="top" align="right" iconType="circle" />
-                {SELLERS.map(seller => (
-                  <Bar key={seller} shape={<ThreeDBar />} name={seller} dataKey={seller} stackId="a" fill={sellerColors[seller] || 'url(#colorRealizado)'} />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+    <div className="space-y-10 pb-20">
+      {/* Top Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-zinc-900 p-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-yellow-400/20 transition-all" />
+          <div className="relative space-y-4">
+            <div className="bg-zinc-800 w-10 h-10 rounded-xl flex items-center justify-center">
+              <TrendingUp size={20} className="text-yellow-400" />
+            </div>
+            <div>
+              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">Vendas do Mês</p>
+              <h3 className="text-4xl font-black tracking-tighter">{totalRealized}</h3>
+            </div>
           </div>
         </div>
 
-        <div id="panel-equipamentos" className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 relative lg:col-span-2">
-          <button onClick={() => handleShare('panel-equipamentos', 'Desempenho_Equipamentos')} className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors" title="Compartilhar">
-            <Share2 size={18} />
-          </button>
-          <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-            <Target size={20} className="text-yellow-500" />
-            Desempenho por Equipamento (Realizado vs Meta)
-          </h3>
-          <div className="h-[350px]">
+        <div className="bg-white p-8 rounded-[2rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 relative overflow-hidden group">
+          <div className="relative space-y-4">
+            <div className="bg-zinc-50 w-10 h-10 rounded-xl flex items-center justify-center">
+              <Target size={20} className="text-zinc-400" />
+            </div>
+            <div>
+              <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest">Meta Global</p>
+              <h3 className="text-4xl font-black tracking-tighter text-zinc-900">{totalCompanyMeta}</h3>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-[2rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 relative overflow-hidden group">
+          <div className="relative space-y-4">
+            <div className="bg-zinc-50 w-10 h-10 rounded-xl flex items-center justify-center">
+              <Users size={20} className="text-zinc-400" />
+            </div>
+            <div>
+              <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest">Consultores</p>
+              <h3 className="text-4xl font-black tracking-tighter text-zinc-900">3</h3>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-yellow-400 p-8 rounded-[2rem] shadow-2xl shadow-yellow-400/20 relative overflow-hidden group">
+          <div className="relative space-y-4">
+            <div className="bg-black/10 w-10 h-10 rounded-xl flex items-center justify-center">
+              <Award size={20} className="text-black" />
+            </div>
+            <div>
+              <p className="text-black/60 text-[10px] font-black uppercase tracking-widest">Atingimento</p>
+              <h3 className="text-4xl font-black tracking-tighter text-black">
+                {achievementPercent.toFixed(0)}%
+              </h3>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+        {/* 1. Performance por Equipamento */}
+        <div id="chart-equip" className="bg-white p-8 rounded-[2.5rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 space-y-8">
+          <div className="flex justify-between items-center">
+            <div className="space-y-1">
+              <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Performance por Equipamento</h4>
+              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">Realizado vs Meta Empresa</p>
+            </div>
+            <button onClick={() => handleShare('chart-equip', 'Performance_Equipamento')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
+              <Share2 size={18} className="text-zinc-400" />
+            </button>
+          </div>
+          
+          <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={equipmentPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+              <BarChart data={equipmentPerformance} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
                 <XAxis 
                   dataKey="name" 
                   axisLine={false} 
                   tickLine={false} 
-                  angle={-45} 
-                  textAnchor="end" 
+                  tick={{ fill: '#a1a1aa', fontSize: 10, fontWeight: 800 }}
                   interval={0}
-                  height={80}
-                  style={{ fontSize: '10px', fontWeight: 'bold' }}
                 />
                 <Tooltip 
-                  cursor={{ fill: '#f8f9fa' }}
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
                 />
-                <Legend verticalAlign="top" align="right" iconType="circle" />
-                <Bar shape={<ThreeDBar />} name="Realizado" dataKey="realizado" fill="url(#colorRealizado)">
-                  <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#52525b' }} />
+                <Bar dataKey="realizado" name="Realizado" fill="#18181b" radius={[6, 6, 0, 0]} barSize={30}>
+                  <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#18181b' }} />
                 </Bar>
-                <Bar shape={<ThreeDBar />} name="Meta" dataKey="meta" fill="url(#colorMeta)">
-                  <LabelList dataKey="meta" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#52525b' }} />
+                <Bar dataKey="meta" name="Meta" fill="#facc15" radius={[6, 6, 0, 0]} barSize={30}>
+                  <LabelList dataKey="meta" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#eab308' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div id="panel-consorcio" className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 relative lg:col-span-2">
-          <button onClick={() => handleShare('panel-consorcio', 'Painel_Consorcio')} className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors" title="Compartilhar">
-            <Share2 size={18} />
-          </button>
-          <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-            <Package size={20} className="text-yellow-500" />
-            Painel Consórcio
-          </h3>
+        {/* 2. Performance por Consultor */}
+        <div id="chart-seller" className="bg-white p-8 rounded-[2.5rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 space-y-8">
+          <div className="flex justify-between items-center">
+            <div className="space-y-1">
+              <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Performance por Consultor</h4>
+              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">Realizado vs Meta Individual</p>
+            </div>
+            <button onClick={() => handleShare('chart-seller', 'Performance_Consultor')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
+              <Share2 size={18} className="text-zinc-400" />
+            </button>
+          </div>
           
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Meta Total (Cotas)</p>
-                <p className="text-2xl font-black">{consorcioData.totalGeralMeta}</p>
-              </div>
-              <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Total Cotas Vendidas</p>
-                <p className="text-2xl font-black">{consorcioData.totalGeralQty}</p>
-              </div>
-              <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Valor Total (R$)</p>
-                <p className="text-xl font-black text-yellow-600">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(consorcioData.totalGeralValor)}
-                </p>
-              </div>
-            </div>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={consultantPerformance} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#a1a1aa', fontSize: 10, fontWeight: 800 }}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
+                />
+                <Bar dataKey="realizado" name="Realizado" fill="#18181b" radius={[6, 6, 0, 0]} barSize={40}>
+                  <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#18181b' }} />
+                </Bar>
+                <Bar dataKey="meta" name="Meta" fill="#facc15" radius={[6, 6, 0, 0]} barSize={40}>
+                  <LabelList dataKey="meta" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#eab308' }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {consorcioData.bySeller.map(seller => (
-                <div key={seller.name} className="bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                  <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2">{seller.name}</p>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-zinc-500">Meta:</span>
-                      <span className="font-bold">{seller.meta} cotas</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-zinc-500">Vendidas:</span>
-                      <span className="font-bold">{seller.realizado} cotas</span>
-                    </div>
-                    <div className="flex justify-between text-sm pt-2 border-t border-zinc-200 mt-2">
-                      <span className="text-zinc-500">Valor Total:</span>
-                      <span className="font-bold text-yellow-600">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(seller.valor)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+        {/* 3. Evolução Mensal vs Meta */}
+        <div id="chart-monthly" className="bg-white p-8 rounded-[2.5rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 space-y-8 lg:col-span-2">
+          <div className="flex justify-between items-center">
+            <div className="space-y-1">
+              <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Acompanhamento Mensal da Empresa</h4>
+              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">Realizado vs Meta Total Mensal</p>
             </div>
-
-            <div className="h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={consorcioData.bySeller} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                  <Tooltip 
-                    cursor={{ fill: '#f8f9fa' }}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Legend verticalAlign="top" align="right" iconType="circle" />
-                  <Bar shape={<ThreeDBar />} name="Cotas Vendidas" dataKey="realizado">
-                    {consorcioData.bySeller.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={sellerColors[entry.name] || 'url(#colorRealizado)'} />
-                    ))}
-                    <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#52525b' }} />
-                  </Bar>
-                  <Bar shape={<ThreeDBar />} name="Meta" dataKey="meta" fill="url(#colorMeta)">
-                    <LabelList dataKey="meta" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#52525b' }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {consorcioData.byMonth.length > 0 && (
-              <div className="mt-4">
-                <h4 className="text-sm font-bold text-zinc-700 mb-3">Evolução Mensal (Cotas)</h4>
-                <div className="h-[200px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={consorcioData.byMonth} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} />
-                      <Tooltip 
-                        cursor={{ fill: '#f8f9fa' }}
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                      />
-                      <Legend verticalAlign="top" align="right" iconType="circle" />
-                      {SELLERS.map(seller => (
-                        <Bar key={seller} shape={<ThreeDBar />} name={seller} dataKey={seller} stackId="a" fill={sellerColors[seller] || 'url(#colorRealizado)'} />
-                      ))}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
+            <button onClick={() => handleShare('chart-monthly', 'Acompanhamento_Mensal')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
+              <Share2 size={18} className="text-zinc-400" />
+            </button>
+          </div>
+          
+          <div className="h-[350px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={companyMonthlyProgress} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#a1a1aa', fontSize: 10, fontWeight: 800 }}
+                />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
+                />
+                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' }} />
+                <Bar dataKey="realizado" name="Vendas Realizadas" fill="#18181b" radius={[6, 6, 0, 0]} barSize={40}>
+                  <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#18181b' }} />
+                </Bar>
+                <Line type="monotone" dataKey="meta" name="Meta Mensal" stroke="#facc15" strokeWidth={4} dot={{ r: 6, fill: '#facc15', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, icon, trend }: { label: string, value: string, icon: React.ReactNode, trend?: string }) {
+  return (
+    <div className="bg-black text-white p-6 rounded-2xl shadow-xl relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-400/10 rounded-full -mr-8 -mt-8 blur-2xl group-hover:bg-yellow-400/20 transition-all duration-500" />
+      <div className="flex justify-between items-start mb-4">
+        <div className="p-2 bg-zinc-800 rounded-lg">{icon}</div>
+        {trend && <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{trend}</span>}
+      </div>
+      <p className="text-zinc-400 text-sm font-medium mb-1">{label}</p>
+      <h4 className="text-2xl font-black tracking-tight">{value}</h4>
     </div>
   );
 }
@@ -875,20 +889,6 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
           </table>
         </div>
       </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, icon, trend }: { label: string, value: string, icon: React.ReactNode, trend: string }) {
-  return (
-    <div className="bg-black text-white p-6 rounded-2xl shadow-xl relative overflow-hidden group">
-      <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-400/10 rounded-full -mr-8 -mt-8 blur-2xl group-hover:bg-yellow-400/20 transition-all duration-500" />
-      <div className="flex justify-between items-start mb-4">
-        <div className="p-2 bg-zinc-800 rounded-lg">{icon}</div>
-        <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">{trend}</span>
-      </div>
-      <p className="text-zinc-400 text-sm font-medium mb-1">{label}</p>
-      <h4 className="text-2xl font-black tracking-tight">{value}</h4>
     </div>
   );
 }
@@ -1242,72 +1242,172 @@ function InputGroup({ label, children }: { label: string, children: React.ReactN
 }
 
 // --- METAS TAB ---
-function MetasTab({ goals, sales, onUpdateGoal }: { goals: Goal[], sales: Sale[], onUpdateGoal: (v: Seller, e: Equipment, m: number) => void }) {
-  const [selectedSeller, setSelectedSeller] = useState<Seller>(SELLERS[0]);
-
-  const sellerGoals = goals.filter(g => g.vendedor === selectedSeller);
-  
-  const getRealized = (equip: Equipment) => {
-    return sales.filter(s => s.vendedor === selectedSeller && s.equipamento === equip).length;
-  };
+function MetasTab({ 
+  goals, 
+  companyGoals, 
+  sales, 
+  onUpdateGoal, 
+  onUpdateCompanyGoal 
+}: { 
+  goals: Goal[], 
+  companyGoals: CompanyGoal[], 
+  sales: Sale[], 
+  onUpdateGoal: (v: Seller, e: Equipment, m: number) => void,
+  onUpdateCompanyGoal: (e: Equipment, m: number) => void
+}) {
+  const targetSellers: Seller[] = ['Anderson', 'Carlos', 'Thalita'];
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap gap-4 justify-center">
-        {SELLERS.map(seller => (
-          <button
-            key={seller}
-            onClick={() => setSelectedSeller(seller)}
-            className={cn(
-              "px-8 py-3 rounded-2xl font-bold uppercase tracking-tighter transition-all",
-              selectedSeller === seller 
-                ? "bg-black text-white shadow-2xl scale-105" 
-                : "bg-white text-zinc-400 hover:text-black hover:bg-zinc-100"
-            )}
-          >
-            {seller}
-          </button>
-        ))}
+    <div className="space-y-12 pb-20">
+      <div className="flex flex-col items-center text-center space-y-4">
+        <div className="bg-yellow-400 p-3 rounded-2xl shadow-lg shadow-yellow-400/20">
+          <Target className="text-black" size={32} />
+        </div>
+        <div>
+          <h2 className="text-3xl font-black uppercase tracking-tighter text-zinc-900">Gestão de Metas</h2>
+          <p className="text-zinc-500 text-sm max-w-md mx-auto">
+            Configure a meta global da empresa por equipamento e distribua entre os consultores estratégicos.
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {sellerGoals.map(goal => {
-          const realized = getRealized(goal.equipamento);
-          const progress = Math.min((realized / goal.meta) * 100, 100);
+      <div className="grid grid-cols-1 gap-10">
+        {EQUIPMENTS.filter(e => e !== 'Consórcio').map(equip => {
+          const companyGoal = companyGoals.find(cg => cg.equipamento === equip)?.meta || 0;
+          const individualGoals = goals.filter(g => g.equipamento === equip && targetSellers.includes(g.vendedor));
+          const distributedTotal = individualGoals.reduce((acc, g) => acc + g.meta, 0);
+          const realized = sales.filter(s => s.equipamento === equip).length;
+          const remaining = companyGoal - distributedTotal;
           
           return (
-            <div key={goal.equipamento} className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 flex flex-col">
-              <h4 className="text-xs font-black uppercase tracking-tight text-zinc-400 mb-4 h-8 line-clamp-2">{goal.equipamento}</h4>
-              
-              <div className="flex items-end justify-between mb-2">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold uppercase text-zinc-400">Realizado</span>
-                  <span className="text-3xl font-black">{realized}</span>
+            <div key={equip} className="bg-white rounded-[2rem] shadow-xl shadow-zinc-200/50 border border-zinc-100 overflow-hidden group transition-all hover:shadow-2xl hover:shadow-yellow-400/5">
+              <div className="p-8 bg-zinc-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-8 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/5 rounded-full -mr-20 -mt-20 blur-3xl" />
+                
+                <div className="space-y-2 relative">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                    <span className="text-yellow-400 text-[10px] font-black uppercase tracking-[0.2em]">Equipamento</span>
+                  </div>
+                  <h3 className="text-3xl font-black uppercase tracking-tight">{equip}</h3>
                 </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-[10px] font-bold uppercase text-zinc-400">Meta</span>
-                  <input 
-                    type="number" 
-                    value={goal.meta}
-                    onChange={e => onUpdateGoal(selectedSeller, goal.equipamento, parseInt(e.target.value) || 0)}
-                    className="w-16 text-right font-bold text-lg bg-zinc-50 border-b-2 border-transparent focus:border-yellow-400 outline-none"
-                  />
+                
+                <div className="flex flex-wrap items-center gap-8 relative">
+                  <div className="space-y-2">
+                    <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest block text-right">Meta Empresa</span>
+                    <div className="flex items-center gap-3 justify-end group/meta">
+                      <div className="relative">
+                        <input 
+                          type="number" 
+                          value={companyGoal}
+                          onChange={e => onUpdateCompanyGoal(equip as Equipment, parseInt(e.target.value) || 0)}
+                          className="bg-zinc-800/50 text-3xl font-black text-yellow-400 w-28 px-4 py-2 rounded-xl text-right outline-none border-2 border-transparent focus:border-yellow-400 focus:bg-zinc-800 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <div className="absolute -right-2 -top-2 opacity-0 group-hover/meta:opacity-100 transition-opacity">
+                          <Edit2 size={12} className="text-yellow-400" />
+                        </div>
+                      </div>
+                      <span className="text-zinc-600 font-black text-sm uppercase">Un</span>
+                    </div>
+                  </div>
+                  
+                  <div className="h-16 w-px bg-zinc-800 hidden lg:block" />
+                  
+                  <div className="space-y-2">
+                    <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest block text-right">Realizado</span>
+                    <div className="flex items-baseline gap-2 justify-end">
+                      <span className="text-4xl font-black text-white">{realized}</span>
+                      <span className="text-xs font-bold text-zinc-600 uppercase">Un</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden mt-4">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  className={cn(
-                    "h-full rounded-full",
-                    progress >= 100 ? "bg-green-500" : "bg-yellow-400"
-                  )}
-                />
-              </div>
-              <div className="flex justify-between mt-2">
-                <span className="text-[10px] font-bold text-zinc-400">{progress.toFixed(0)}%</span>
-                {progress >= 100 && <span className="text-[10px] font-bold text-green-600 uppercase">Meta Atingida!</span>}
+              <div className="p-8 bg-zinc-50/50">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                  <div className="space-y-1">
+                    <h4 className="font-black text-zinc-900 uppercase text-xs tracking-widest">Distribuição por Consultor</h4>
+                    <p className="text-zinc-400 text-[10px] font-medium">Atribua as metas individuais para Anderson, Carlos e Thalita.</p>
+                  </div>
+                  
+                  <div className={cn(
+                    "px-6 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border-2 shadow-sm transition-all",
+                    distributedTotal === companyGoal ? "bg-green-50 border-green-100 text-green-600" : 
+                    distributedTotal > companyGoal ? "bg-red-50 border-red-100 text-red-600" : "bg-blue-50 border-blue-100 text-blue-600"
+                  )}>
+                    {distributedTotal === companyGoal ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                        100% Distribuído
+                      </div>
+                    ) : distributedTotal > companyGoal ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                        Excesso: {distributedTotal - companyGoal} un
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                        Restante: {companyGoal - distributedTotal} un
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {targetSellers.map(seller => {
+                    const goal = individualGoals.find(g => g.vendedor === seller);
+                    const sellerRealized = sales.filter(s => s.vendedor === seller && s.equipamento === equip).length;
+                    const progress = goal?.meta ? Math.min((sellerRealized / goal.meta) * 100, 100) : 0;
+
+                    return (
+                      <div key={seller} className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm hover:border-yellow-400 transition-all hover:shadow-xl hover:shadow-zinc-200/50 group/card">
+                        <div className="flex justify-between items-start mb-6">
+                          <div className="space-y-1">
+                            <span className="font-black uppercase text-xs tracking-tight text-zinc-400 block">Consultor</span>
+                            <span className="font-black uppercase text-sm tracking-tight text-zinc-900">{seller}</span>
+                          </div>
+                          <div className="flex items-center gap-2 bg-zinc-50 px-3 py-1.5 rounded-xl border border-zinc-100 group-hover/card:border-yellow-200 group-hover/card:bg-yellow-50 transition-all">
+                            <input 
+                              type="number" 
+                              value={goal?.meta || 0}
+                              onChange={e => onUpdateGoal(seller, equip as Equipment, parseInt(e.target.value) || 0)}
+                              className="w-10 bg-transparent text-right font-black text-sm outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <span className="text-[10px] font-black text-zinc-400 uppercase">Meta</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex items-end justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase block">Realizado</span>
+                              <span className="text-3xl font-black text-zinc-900">{sellerRealized}</span>
+                            </div>
+                            <div className="text-right space-y-1">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase block">Progresso</span>
+                              <span className={cn(
+                                "text-lg font-black",
+                                progress >= 100 ? "text-green-600" : "text-zinc-900"
+                              )}>{progress.toFixed(0)}%</span>
+                            </div>
+                          </div>
+
+                          <div className="relative h-2 bg-zinc-100 rounded-full overflow-hidden">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${progress}%` }}
+                              className={cn(
+                                "absolute inset-y-0 left-0 rounded-full transition-all duration-1000",
+                                progress >= 100 ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]" : "bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.4)]"
+                              )}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           );

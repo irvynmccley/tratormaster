@@ -30,7 +30,15 @@ CREATE TABLE IF NOT EXISTS public.goals (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. Tabela de Kits (Kits Manuais)
+-- 3. Tabela de Metas da Empresa (Company Goals)
+CREATE TABLE IF NOT EXISTS public.company_goals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    equipamento TEXT NOT NULL,
+    meta INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Tabela de Kits (Kits Manuais)
 CREATE TABLE IF NOT EXISTS public.kits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     data TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -41,12 +49,13 @@ CREATE TABLE IF NOT EXISTS public.kits (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. Políticas de Segurança (RLS - Row Level Security)
+-- 5. Políticas de Segurança (RLS - Row Level Security)
 -- Por enquanto, vamos permitir leitura e escrita pública para facilitar a migração.
 -- Em produção, você deve restringir isso usando a autenticação do Supabase.
 
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.company_goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.kits ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Permitir leitura pública em sales" ON public.sales FOR SELECT USING (true);
@@ -58,6 +67,11 @@ CREATE POLICY "Permitir leitura pública em goals" ON public.goals FOR SELECT US
 CREATE POLICY "Permitir inserção pública em goals" ON public.goals FOR INSERT WITH CHECK (true);
 CREATE POLICY "Permitir atualização pública em goals" ON public.goals FOR UPDATE USING (true);
 CREATE POLICY "Permitir deleção pública em goals" ON public.goals FOR DELETE USING (true);
+
+CREATE POLICY "Permitir leitura pública em company_goals" ON public.company_goals FOR SELECT USING (true);
+CREATE POLICY "Permitir inserção pública em company_goals" ON public.company_goals FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permitir atualização pública em company_goals" ON public.company_goals FOR UPDATE USING (true);
+CREATE POLICY "Permitir deleção pública em company_goals" ON public.company_goals FOR DELETE USING (true);
 
 CREATE POLICY "Permitir leitura pública em kits" ON public.kits FOR SELECT USING (true);
 CREATE POLICY "Permitir inserção pública em kits" ON public.kits FOR INSERT WITH CHECK (true);
