@@ -586,7 +586,7 @@ function DashboardTab({
 
   // 2. Performance por Consultor (Realizado vs Meta Individual)
   const consultantPerformance = useMemo(() => {
-    return SELLERS.map(seller => {
+    return SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).map(seller => {
       const realized = sales.filter(s => 
         (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
         (s.marca || 'JCB').trim().toUpperCase() === 'JCB'
@@ -600,10 +600,26 @@ function DashboardTab({
     }).filter(p => p.meta > 0 || p.realizado > 0);
   }, [sales, goals]);
 
+  // 4. Performance de Consórcio por Consultor
+  const consorcioPerformance = useMemo(() => {
+    return SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).map(seller => {
+      const realized = sales.filter(s => 
+        (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
+        s.equipamento === 'Consórcio'
+      ).reduce((acc, s) => acc + (s.quantidadeCota || 1), 0);
+      const meta = goals.filter(g => g.vendedor === seller && g.equipamento === 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
+      return {
+        name: seller,
+        realizado: realized,
+        meta: meta
+      };
+    }).filter(p => p.meta > 0 || p.realizado > 0);
+  }, [sales, goals]);
+
   // 3. Acompanhamento Mensal da Empresa (Realizado vs Meta Total)
   const companyMonthlyProgress = useMemo(() => {
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    const totalCompanyMeta = companyGoals.reduce((acc, g) => acc + g.meta, 0);
+    const totalCompanyMeta = companyGoals.filter(g => g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
 
     const progress: any[] = months.map((month, idx) => {
       const realized = sales.filter(s => {
@@ -627,7 +643,7 @@ function DashboardTab({
     return progress;
   }, [sales, companyGoals, currentYear]);
 
-  const totalCompanyMeta = companyGoals.reduce((acc, g) => acc + g.meta, 0);
+  const totalCompanyMeta = companyGoals.filter(g => g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
   const totalRealized = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
   const achievementPercent = totalCompanyMeta > 0 ? (totalRealized / totalCompanyMeta) * 100 : 0;
 
@@ -635,9 +651,12 @@ function DashboardTab({
     const element = document.getElementById(elementId);
     if (!element) return;
     try {
-      const blob = await toBlob(element, { backgroundColor: '#ffffff', pixelRatio: 2 });
-      if (!blob) return;
+      // Usar toPng diretamente, que é mais confiável que toBlob em alguns navegadores
+      const dataUrl = await toPng(element, { backgroundColor: '#ffffff', pixelRatio: 2 });
       
+      // Tentar converter dataUrl para Blob para a Web Share API
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
       const file = new File([blob], `${title}.png`, { type: 'image/png' });
       
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -653,28 +672,16 @@ function DashboardTab({
         }
       }
       
-      // Fallback se a Web Share API não suportar arquivos (ex: Desktop)
-      try {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            'image/png': blob
-          })
-        ]);
-        alert('Imagem copiada! Cole no WhatsApp.');
-        window.open(`https://wa.me/?text=Confira%20o%20gr%C3%A1fico%20${title}`, '_blank');
-      } catch (clipboardError) {
-        console.error('Clipboard copy failed', clipboardError);
-        // Fallback para download
-        const dataUrl = await toPng(element, { backgroundColor: '#ffffff', pixelRatio: 2 });
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = `${title}.png`;
-        link.click();
-        alert('Imagem baixada! Anexe no WhatsApp.');
-        window.open(`https://wa.me/?text=Confira%20o%20gr%C3%A1fico%20${title}`, '_blank');
-      }
+      // Fallback para download direto
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `${title}.png`;
+      link.click();
+      alert('Imagem baixada! Você pode anexá-la no WhatsApp.');
+      window.open(`https://wa.me/?text=Confira%20o%20gr%C3%A1fico%20${title}`, '_blank');
     } catch (err) {
       console.error('Failed to share', err);
+      alert('Erro ao gerar a imagem para compartilhamento.');
     }
   };
 
@@ -846,6 +853,43 @@ function DashboardTab({
                   <LabelList dataKey="metaTotal" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#eab308' }} />
                 </Bar>
               </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 4. Performance de Consórcio por Consultor */}
+        <div id="chart-consorcio" className="bg-white p-8 rounded-[2.5rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 space-y-8 lg:col-span-2">
+          <div className="flex justify-between items-center">
+            <div className="space-y-1">
+              <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Performance de Consórcio por Consultor</h4>
+              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">Cotas Realizadas vs Meta</p>
+            </div>
+            <button onClick={() => handleShare('chart-consorcio', 'Consorcio_por_Consultor')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
+              <Share2 size={18} className="text-zinc-400" />
+            </button>
+          </div>
+          
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={consorcioPerformance} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#a1a1aa', fontSize: 10, fontWeight: 800 }}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
+                />
+                <Bar dataKey="realizado" name="Cotas Realizadas" fill="#18181b" radius={[6, 6, 0, 0]} barSize={40}>
+                  <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#18181b' }} />
+                </Bar>
+                <Bar dataKey="meta" name="Meta de Cotas" fill="#facc15" radius={[6, 6, 0, 0]} barSize={40}>
+                  <LabelList dataKey="meta" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#eab308' }} />
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -1478,11 +1522,15 @@ function MetasTab({
       </div>
 
       <div className="grid grid-cols-1 gap-10">
-        {EQUIPMENTS.filter(e => e !== 'Consórcio').map(equip => {
+        {EQUIPMENTS.map(equip => {
           const companyGoal = companyGoals.find(cg => cg.equipamento === equip)?.meta || 0;
           const individualGoals = goals.filter(g => g.equipamento === equip && targetSellers.includes(g.vendedor));
           const distributedTotal = individualGoals.reduce((acc, g) => acc + g.meta, 0);
-          const realized = sales.filter(s => s.equipamento === equip && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
+          
+          const realized = equip === 'Consórcio'
+            ? sales.filter(s => s.equipamento === 'Consórcio').reduce((acc, s) => acc + (s.quantidadeCota || 1), 0)
+            : sales.filter(s => s.equipamento === equip && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
+            
           const remaining = companyGoal - distributedTotal;
           
           return (
@@ -1563,11 +1611,18 @@ function MetasTab({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {targetSellers.map(seller => {
                     const goal = individualGoals.find(g => g.vendedor === seller);
-                    const sellerRealized = sales.filter(s => 
-                      (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
-                      s.equipamento === equip && 
-                      (s.marca || 'JCB').trim().toUpperCase() === 'JCB'
-                    ).length;
+                    
+                    const sellerRealized = equip === 'Consórcio'
+                      ? sales.filter(s => 
+                          (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
+                          s.equipamento === 'Consórcio'
+                        ).reduce((acc, s) => acc + (s.quantidadeCota || 1), 0)
+                      : sales.filter(s => 
+                          (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
+                          s.equipamento === equip && 
+                          (s.marca || 'JCB').trim().toUpperCase() === 'JCB'
+                        ).length;
+                        
                     const progress = goal?.meta ? Math.min((sellerRealized / goal.meta) * 100, 100) : 0;
 
                     return (
