@@ -645,7 +645,14 @@ function DashboardTab({
 
   const totalCompanyMeta = companyGoals.filter(g => g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
   const totalRealized = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
+  const currentMonthSales = sales.filter(s => {
+    const d = new Date(s.data);
+    return d.getUTCMonth() === currentMonth && d.getUTCFullYear() === currentYear && (s.marca || 'JCB').trim().toUpperCase() === 'JCB';
+  }).length;
   const achievementPercent = totalCompanyMeta > 0 ? (totalRealized / totalCompanyMeta) * 100 : 0;
+  
+  const remainingMonths = 12 - currentMonth;
+  const monthlyNecessity = Math.max(0, Math.ceil((totalCompanyMeta - totalRealized) / remainingMonths));
 
   const handleShare = async (elementId: string, title: string) => {
     const element = document.getElementById(elementId);
@@ -697,7 +704,7 @@ function DashboardTab({
             </div>
             <div>
               <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">Vendas do Mês</p>
-              <h3 className="text-4xl font-black tracking-tighter">{totalRealized}</h3>
+              <h3 className="text-4xl font-black tracking-tighter">{currentMonthSales}</h3>
             </div>
           </div>
         </div>
@@ -708,8 +715,8 @@ function DashboardTab({
               <Target size={20} className="text-zinc-400" />
             </div>
             <div>
-              <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest">Meta Global</p>
-              <h3 className="text-4xl font-black tracking-tighter text-zinc-900">{totalCompanyMeta}</h3>
+              <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest">Necessidade Mensal</p>
+              <h3 className="text-4xl font-black tracking-tighter text-zinc-900">{monthlyNecessity}</h3>
             </div>
           </div>
         </div>
