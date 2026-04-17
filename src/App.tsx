@@ -310,6 +310,37 @@ export default function App() {
     }
   };
 
+  const saveAllGoals = async (newCompanyGoals: CompanyGoal[], newGoals: Goal[]) => {
+    setCompanyGoals(newCompanyGoals);
+    setGoals(newGoals);
+
+    if (supabase) {
+      try {
+        const { data: existingCompanyGoals } = await supabase.from('company_goals').select('id, equipamento');
+        for (const cg of newCompanyGoals) {
+          const existing = existingCompanyGoals?.find(e => e.equipamento === cg.equipamento);
+          if (existing) {
+            await supabase.from('company_goals').update({ meta: cg.meta }).eq('id', existing.id);
+          } else {
+            await supabase.from('company_goals').insert([{ equipamento: cg.equipamento, meta: cg.meta }]);
+          }
+        }
+
+        const { data: existingGoals } = await supabase.from('goals').select('id, vendedor, equipamento');
+        for (const g of newGoals) {
+          const existing = existingGoals?.find(e => e.vendedor === g.vendedor && e.equipamento === g.equipamento);
+          if (existing) {
+            await supabase.from('goals').update({ meta: g.meta }).eq('id', existing.id);
+          } else {
+            await supabase.from('goals').insert([{ vendedor: g.vendedor, equipamento: g.equipamento, meta: g.meta }]);
+          }
+        }
+      } catch (err) {
+        console.error('Error saving all goals:', err);
+      }
+    }
+  };
+
   const updateGoal = async (vendedor: Seller, equipamento: Equipment, meta: number) => {
     setGoals(prev => prev.map(g => 
       (g.vendedor === vendedor && g.equipamento === equipamento) ? { ...g, meta } : g
@@ -506,8 +537,7 @@ export default function App() {
                 goals={goals} 
                 companyGoals={companyGoals}
                 sales={sales} 
-                onUpdateGoal={updateGoal} 
-                onUpdateCompanyGoal={updateCompanyGoal}
+                onSaveAll={saveAllGoals}
               />
             </motion.div>
           )}
@@ -1503,16 +1533,49 @@ function MetasTab({
   goals, 
   companyGoals, 
   sales, 
-  onUpdateGoal, 
-  onUpdateCompanyGoal 
+  onSaveAll 
 }: { 
   goals: Goal[], 
   companyGoals: CompanyGoal[], 
   sales: Sale[], 
-  onUpdateGoal: (v: Seller, e: Equipment, m: number) => void,
-  onUpdateCompanyGoal: (e: Equipment, m: number) => void
+  onSaveAll: (cg: CompanyGoal[], g: Goal[]) => Promise<void>
 }) {
   const targetSellers: Seller[] = ['Anderson', 'Carlos', 'Thalita'];
+  
+  const [localCompanyGoals, setLocalCompanyGoals] = useState<CompanyGoal[]>(companyGoals);
+  const [localGoals, setLocalGoals] = useState<Goal[]>(goals);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+
+  useEffect(() => {
+    setLocalCompanyGoals(companyGoals);
+    setLocalGoals(goals);
+  }, [companyGoals, goals]);
+
+  const handleUpdateCompanyGoal = (equipamento: Equipment, meta: number) => {
+    setLocalCompanyGoals(prev => {
+      const exists = prev.find(g => g.equipamento === equipamento);
+      if (exists) return prev.map(g => g.equipamento === equipamento ? { ...g, meta } : g);
+      return [...prev, { equipamento, meta }];
+    });
+  };
+
+  const handleUpdateGoal = (vendedor: Seller, equipamento: Equipment, meta: number) => {
+    setLocalGoals(prev => {
+      const exists = prev.find(g => g.vendedor === vendedor && g.equipamento === equipamento);
+      if (exists) return prev.map(g => (g.vendedor === vendedor && g.equipamento === equipamento) ? { ...g, meta } : g);
+      return [...prev, { vendedor, equipamento, meta }];
+    });
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveMessage('');
+    await onSaveAll(localCompanyGoals, localGoals);
+    setIsSaving(false);
+    setSaveMessage('Metas salvas com sucesso!');
+    setTimeout(() => setSaveMessage(''), 3000);
+  };
 
   return (
     <div className="space-y-12 pb-20">
@@ -1526,12 +1589,32 @@ function MetasTab({
             Configure a meta global da empresa por equipamento e distribua entre os consultores estratégicos.
           </p>
         </div>
+        
+        <div className="flex flex-col items-center gap-2 mt-4">
+          <button 
+            onClick={handleSave}
+            disabled={isSaving}
+            className="bg-yellow-400 hover:bg-yellow-500 text-black font-black uppercase tracking-widest px-8 py-3 rounded-2xl transition-all shadow-xl shadow-yellow-400/20 disabled:opacity-50"
+          >
+            {isSaving ? 'Salvando...' : 'Salvar Metas'}
+          </button>
+          
+          {saveMessage && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-green-600 font-bold text-sm bg-green-50 px-4 py-2 rounded-xl border border-green-100"
+            >
+              {saveMessage}
+            </motion.div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-10">
         {EQUIPMENTS.map(equip => {
-          const companyGoal = companyGoals.find(cg => cg.equipamento === equip)?.meta || 0;
-          const individualGoals = goals.filter(g => g.equipamento === equip && targetSellers.includes(g.vendedor));
+          const companyGoal = localCompanyGoals.find(cg => cg.equipamento === equip)?.meta || 0;
+          const individualGoals = localGoals.filter(g => g.equipamento === equip && targetSellers.includes(g.vendedor));
           const distributedTotal = individualGoals.reduce((acc, g) => acc + g.meta, 0);
           
           const realized = equip === 'Consórcio'
@@ -1561,7 +1644,7 @@ function MetasTab({
                         <input 
                           type="number" 
                           value={companyGoal}
-                          onChange={e => onUpdateCompanyGoal(equip as Equipment, parseInt(e.target.value) || 0)}
+                          onChange={e => handleUpdateCompanyGoal(equip as Equipment, parseInt(e.target.value) || 0)}
                           className="bg-zinc-800/50 text-3xl font-black text-yellow-400 w-28 px-4 py-2 rounded-xl text-right outline-none border-2 border-transparent focus:border-yellow-400 focus:bg-zinc-800 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                         <div className="absolute -right-2 -top-2 opacity-0 group-hover/meta:opacity-100 transition-opacity">
@@ -1643,7 +1726,7 @@ function MetasTab({
                             <input 
                               type="number" 
                               value={goal?.meta || 0}
-                              onChange={e => onUpdateGoal(seller, equip as Equipment, parseInt(e.target.value) || 0)}
+                              onChange={e => handleUpdateGoal(seller, equip as Equipment, parseInt(e.target.value) || 0)}
                               className="w-10 bg-transparent text-right font-black text-sm outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <span className="text-[10px] font-black text-zinc-400 uppercase">Meta</span>
