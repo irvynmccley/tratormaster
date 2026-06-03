@@ -20,6 +20,7 @@ export type Condition =
   | 'Recurso Proprio'; // For backwards compatibility
 
 export type Marca = 'JCB' | 'EP' | 'Consórcio' | 'Clark';
+export type TipoCota = 'Pontual' | 'Tradicional' | 'Campanha Pontual';
 
 export interface Sale {
   id: string;
@@ -39,6 +40,8 @@ export interface Sale {
   
   // Consórcio only
   quantidadeCota?: number;
+  tipoCota?: TipoCota;
+  comissaoPersonalizada?: number;
   
   // Outros only
   observacao?: string;

@@ -127,6 +127,8 @@ export default function App() {
             notaFiscal: s.nota_fiscal,
             condicao: s.condicao as Condition,
             quantidadeCota: s.quantidade_cota,
+            tipoCota: s.tipo_cota as TipoCota,
+            comissaoPersonalizada: s.comissao_personalizada ? Number(s.comissao_personalizada) : undefined,
             observacao: s.observacao,
             recebidoGerente: s.recebido_gerente
           }));
@@ -248,6 +250,8 @@ export default function App() {
         nota_fiscal: sale.notaFiscal,
         condicao: sale.condicao,
         quantidade_cota: sale.quantidadeCota,
+        tipo_cota: sale.tipoCota,
+        comissao_personalizada: sale.comissaoPersonalizada,
         observacao: sale.observacao,
         recebido_gerente: sale.recebidoGerente
       }]);
@@ -274,6 +278,8 @@ export default function App() {
         nota_fiscal: updatedSale.notaFiscal,
         condicao: updatedSale.condicao,
         quantidade_cota: updatedSale.quantidadeCota,
+        tipo_cota: updatedSale.tipoCota,
+        comissao_personalizada: updatedSale.comissaoPersonalizada,
         observacao: updatedSale.observacao,
         recebido_gerente: updatedSale.recebidoGerente
       }).eq('id', updatedSale.id);
@@ -952,6 +958,17 @@ function StatCard({ label, value, icon, trend }: { label: string, value: string,
 // --- COMISSÃO GERENTE TAB ---
 const MANAGER_COMMISSION_RATE = 0.002; // 0.2%
 
+const formatDate = (dateStr: string | undefined) => {
+  if (!dateStr) return '';
+  const dateStrOnly = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  const parts = dateStrOnly.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
+  }
+  return new Date(dateStr).toLocaleDateString('pt-BR');
+};
+
 function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onToggleRecebido: (id: string) => void }) {
   const totalSalesValue = sales.reduce((acc, s) => acc + s.valor, 0);
   
@@ -959,8 +976,15 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
   const salesEP = sales.filter(s => (s.marca || '').trim().toUpperCase() === 'EP').reduce((acc, s) => acc + s.valor, 0);
   const salesClark = sales.filter(s => (s.marca || '').trim().toUpperCase() === 'CLARK').reduce((acc, s) => acc + s.valor, 0);
 
+  const getSaleCommission = (s: Sale) => {
+    if (s.marca === 'Consórcio' && s.tipoCota === 'Campanha Pontual' && s.comissaoPersonalizada !== undefined) {
+      return s.comissaoPersonalizada;
+    }
+    return s.valor * MANAGER_COMMISSION_RATE;
+  };
+
   const pendingSales = sales.filter(s => !s.recebidoGerente);
-  const totalManagerCommission = pendingSales.reduce((acc, s) => acc + (s.valor * MANAGER_COMMISSION_RATE), 0);
+  const totalManagerCommission = pendingSales.reduce((acc, s) => acc + getSaleCommission(s), 0);
 
   const sortedSales = [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 
@@ -1001,48 +1025,48 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
           </h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                <th className="px-6 py-4">Data</th>
-                <th className="px-6 py-4">Cliente</th>
-                <th className="px-6 py-4">Equipamento</th>
-                <th className="px-6 py-4">Valor da Venda</th>
-                <th className="px-6 py-4">Comissão (0,2%)</th>
-                <th className="px-6 py-4">Recebido?</th>
+                <th className="px-3 py-3 whitespace-nowrap">Data</th>
+                <th className="px-3 py-3">Cliente</th>
+                <th className="px-3 py-3">Equipamento</th>
+                <th className="px-3 py-3 whitespace-nowrap">Valor da Venda</th>
+                <th className="px-3 py-3 whitespace-nowrap">Comissão (0,2%)</th>
+                <th className="px-3 py-3 whitespace-nowrap">Recebido?</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {sortedSales.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-zinc-400 italic">Nenhuma venda para calcular comissão.</td>
+                  <td colSpan={6} className="px-3 py-12 text-center text-zinc-400 italic">Nenhuma venda para calcular comissão.</td>
                 </tr>
               ) : (
                 sortedSales.map(sale => {
-                  const commission = sale.valor * MANAGER_COMMISSION_RATE;
+                  const commission = getSaleCommission(sale);
                   return (
                     <tr key={sale.id} className={cn(
                       "hover:bg-zinc-50 transition-colors",
                       sale.recebidoGerente && "opacity-50"
                     )}>
-                      <td className={cn("px-6 py-4 text-sm text-zinc-600", sale.recebidoGerente && "line-through")}>
-                        {new Date(sale.data).toLocaleDateString('pt-BR')}
+                      <td className={cn("px-3 py-3 text-xs text-zinc-600 whitespace-nowrap", sale.recebidoGerente && "line-through")}>
+                        {formatDate(sale.data)}
                       </td>
-                      <td className={cn("px-6 py-4 font-medium", sale.recebidoGerente && "line-through")}>{sale.cliente}</td>
-                      <td className={cn("px-6 py-4 text-sm text-zinc-600", sale.recebidoGerente && "line-through")}>{sale.equipamento || '-'}</td>
-                      <td className={cn("px-6 py-4", sale.recebidoGerente && "line-through")}>
+                      <td className={cn("px-3 py-3 font-medium text-xs break-words", sale.recebidoGerente && "line-through")}>{sale.cliente}</td>
+                      <td className={cn("px-3 py-3 text-xs text-zinc-600 break-words", sale.recebidoGerente && "line-through")}>{sale.equipamento || '-'}</td>
+                      <td className={cn("px-3 py-3 whitespace-nowrap", sale.recebidoGerente && "line-through")}>
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.valor)}
                       </td>
-                      <td className={cn("px-6 py-4 text-yellow-600 font-bold", sale.recebidoGerente && "line-through")}>
+                      <td className={cn("px-3 py-3 text-yellow-600 font-bold whitespace-nowrap", sale.recebidoGerente && "line-through")}>
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(commission)}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
                           <input 
                             type="checkbox" 
                             checked={sale.recebidoGerente}
                             onChange={() => onToggleRecebido(sale.id)}
-                            className="w-5 h-5 accent-yellow-400 cursor-pointer"
+                            className="w-5 h-5 accent-yellow-400 cursor-pointer flex-shrink-0"
                           />
                           <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                             {sale.recebidoGerente ? "Recebido" : "Pendente"}
@@ -1057,8 +1081,8 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
             {sortedSales.length > 0 && (
               <tfoot className="bg-zinc-900 text-white">
                 <tr>
-                  <td colSpan={4} className="px-6 py-4 font-bold text-right uppercase tracking-widest text-[10px]">Total Pendente Gerente:</td>
-                  <td colSpan={2} className="px-6 py-4 font-black text-xl text-yellow-400">
+                  <td colSpan={4} className="px-3 py-4 font-bold text-right uppercase tracking-widest text-[10px]">Total Pendente Gerente:</td>
+                  <td colSpan={2} className="px-3 py-4 font-black text-xl text-yellow-400 whitespace-nowrap">
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalManagerCommission)}
                   </td>
                 </tr>
@@ -1094,6 +1118,8 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
     condicao: '' as Condition,
     notaFiscal: '',
     quantidadeCota: '' as unknown as number,
+    tipoCota: '' as unknown as any,
+    comissaoPersonalizada: '' as unknown as number,
     observacao: ''
   };
 
@@ -1112,6 +1138,8 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
       condicao: sale.condicao || '',
       notaFiscal: sale.notaFiscal || '',
       quantidadeCota: sale.quantidadeCota || ('' as unknown as number),
+      tipoCota: sale.tipoCota || ('' as unknown as any),
+      comissaoPersonalizada: sale.comissaoPersonalizada !== undefined ? sale.comissaoPersonalizada : ('' as unknown as number),
       observacao: sale.observacao || ''
     });
   };
@@ -1263,16 +1291,51 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
             )}
 
             {formData.marca === 'Consórcio' && (
-              <InputGroup label="Quantidade de Cotas *">
-                <input 
-                  type="number" 
-                  min="1"
-                  value={formData.quantidadeCota}
-                  onChange={e => setFormData({...formData, quantidadeCota: Number(e.target.value)})}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
-                  required
-                />
-              </InputGroup>
+              <>
+                <InputGroup label="Tipo de Cota *">
+                  <div className="flex flex-col gap-2 mt-2">
+                    {['Pontual', 'Tradicional', 'Campanha Pontual'].map(tipo => (
+                      <label key={tipo} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="tipoCota"
+                          value={tipo}
+                          checked={formData.tipoCota === tipo}
+                          onChange={e => setFormData({...formData, tipoCota: e.target.value as any})}
+                          className="w-4 h-4 accent-yellow-400"
+                          required
+                        />
+                        <span className="text-sm text-zinc-700">{tipo}</span>
+                      </label>
+                    ))}
+                  </div>
+                </InputGroup>
+                
+                {formData.tipoCota === 'Campanha Pontual' && (
+                  <InputGroup label="Comissão Personalizada (R$) *">
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={formData.comissaoPersonalizada}
+                      onChange={e => setFormData({...formData, comissaoPersonalizada: e.target.value ? Number(e.target.value) : ('' as unknown as number)})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                      placeholder="0,00"
+                      required
+                    />
+                  </InputGroup>
+                )}
+
+                <InputGroup label="Quantidade de Cotas *">
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={formData.quantidadeCota}
+                    onChange={e => setFormData({...formData, quantidadeCota: Number(e.target.value)})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                    required
+                  />
+                </InputGroup>
+              </>
             )}
 
             <InputGroup label="Valor (R$) *">
@@ -1453,57 +1516,62 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
             </h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full text-left text-sm">
               <thead>
                 <tr className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                  <th className="px-6 py-4">Data</th>
-                  <th className="px-6 py-4">Marca</th>
-                  <th className="px-6 py-4">Cliente</th>
-                  <th className="px-6 py-4">Equipamento</th>
-                  <th className="px-6 py-4">Vendedor</th>
-                  <th className="px-6 py-4">Valor</th>
-                  <th className="px-6 py-4 text-right">Ações</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Data</th>
+                  <th className="px-3 py-3">Equip/Marca</th>
+                  <th className="px-3 py-3">Cliente</th>
+                  <th className="px-3 py-3 text-center">Vendedor</th>
+                  <th className="px-3 py-3 text-right">Valor</th>
+                  <th className="px-3 py-3 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {sortedSales.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-zinc-400 italic">Nenhuma venda encontrada com os filtros atuais.</td>
+                    <td colSpan={6} className="px-3 py-12 text-center text-zinc-400 italic">Nenhuma venda encontrada com os filtros atuais.</td>
                   </tr>
                 ) : (
                   sortedSales.map(sale => (
                     <tr key={sale.id} className="hover:bg-zinc-50 transition-colors group">
-                      <td className="px-6 py-4 text-sm text-zinc-600">
-                        {new Date(sale.data).toLocaleDateString('pt-BR')}
+                      <td className="px-3 py-3 text-zinc-600 whitespace-nowrap text-xs">
+                        {formatDate(sale.data)}
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2 py-1 bg-zinc-100 rounded text-[10px] font-bold uppercase">{(sale.marca || 'JCB').trim().toUpperCase()}</span>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="text-xs font-bold text-zinc-700">
+                            {sale.marca === 'Consórcio' 
+                              ? `${sale.quantidadeCota || 1} Cota(s)${sale.tipoCota ? ` - ${sale.tipoCota}` : ''}` 
+                              : sale.equipamento}
+                          </span>
+                          <span className="px-1.5 py-0.5 bg-zinc-100 rounded text-[9px] font-bold uppercase">{(sale.marca || 'JCB').trim().toUpperCase()}</span>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 font-medium">{sale.cliente}</td>
-                      <td className="px-6 py-4 text-sm text-zinc-600">
-                        {sale.marca === 'Consórcio' ? `${sale.quantidadeCota || 1} Cota(s)` : sale.equipamento}
+                      <td className="px-3 py-3 font-medium text-xs break-words">
+                        {sale.cliente}
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2 py-1 bg-zinc-100 rounded text-[10px] font-bold uppercase">{sale.vendedor}</span>
+                      <td className="px-3 py-3 text-center">
+                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-[10px] font-bold uppercase">{sale.vendedor}</span>
                       </td>
-                      <td className="px-6 py-4 font-bold">
+                      <td className="px-3 py-3 font-bold text-right whitespace-nowrap text-xs">
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.valor)}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <td className="px-3 py-3">
+                        <div className="flex justify-center items-center gap-1.5">
                           <button 
                             onClick={() => handleEdit(sale)}
-                            className="p-2 text-zinc-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                            className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-all flex items-center justify-center"
                             title="Editar"
                           >
-                            <Edit2 size={16} />
+                            <Edit2 size={14} />
                           </button>
                           <button 
                             onClick={() => onDeleteSale(sale.id)}
-                            className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-all flex items-center justify-center"
                             title="Excluir"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </td>
@@ -1807,7 +1875,7 @@ function KitsTab({ sales }: { sales: Sale[] }) {
       startY: 20,
       head: [['Data', 'Evento Syonet', 'Cliente', 'Nota Fiscal', 'Vendedor']],
       body: filteredKits.map(k => [
-        new Date(k.data).toLocaleDateString('pt-BR'),
+        formatDate(k.data),
         k.eventoSyonet,
         k.cliente,
         k.notaFiscal || '-',
@@ -1820,7 +1888,7 @@ function KitsTab({ sales }: { sales: Sale[] }) {
 
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredKits.map(k => ({
-      Data: new Date(k.data).toLocaleDateString('pt-BR'),
+      Data: formatDate(k.data),
       'Evento Syonet': k.eventoSyonet,
       Cliente: k.cliente,
       'Nota Fiscal': k.notaFiscal || '-',
@@ -1833,7 +1901,7 @@ function KitsTab({ sales }: { sales: Sale[] }) {
 
   const exportCSV = () => {
     const ws = XLSX.utils.json_to_sheet(filteredKits.map(k => ({
-      Data: new Date(k.data).toLocaleDateString('pt-BR'),
+      Data: formatDate(k.data),
       'Evento Syonet': k.eventoSyonet,
       Cliente: k.cliente,
       'Nota Fiscal': k.notaFiscal || '-',
@@ -1904,32 +1972,32 @@ function KitsTab({ sales }: { sales: Sale[] }) {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                <th className="px-6 py-4">Data</th>
-                <th className="px-6 py-4">Evento Syonet</th>
-                <th className="px-6 py-4">Cliente</th>
-                <th className="px-6 py-4">Nota Fiscal</th>
-                <th className="px-6 py-4">Vendedor</th>
+                <th className="px-3 py-3 whitespace-nowrap">Data</th>
+                <th className="px-3 py-3 whitespace-nowrap">Evento Syonet</th>
+                <th className="px-3 py-3">Cliente</th>
+                <th className="px-3 py-3 whitespace-nowrap">Nota Fiscal</th>
+                <th className="px-3 py-3 whitespace-nowrap">Vendedor</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {filteredKits.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-zinc-400 italic">Nenhum kit registrado para este período.</td>
+                  <td colSpan={5} className="px-3 py-12 text-center text-zinc-400 italic">Nenhum kit registrado para este período.</td>
                 </tr>
               ) : (
                 filteredKits.map(kit => (
                   <tr key={kit.id} className="hover:bg-zinc-50 transition-colors">
-                    <td className="px-6 py-4 text-sm text-zinc-600">
-                      {new Date(kit.data).toLocaleDateString('pt-BR')}
+                    <td className="px-3 py-3 text-xs text-zinc-600 whitespace-nowrap">
+                      {formatDate(kit.data)}
                     </td>
-                    <td className="px-6 py-4 font-mono text-sm">{kit.eventoSyonet}</td>
-                    <td className="px-6 py-4 font-medium">{kit.cliente}</td>
-                    <td className="px-6 py-4 text-sm text-zinc-600">{kit.notaFiscal || '-'}</td>
-                    <td className="px-6 py-4">
-                      <span className="px-2 py-1 bg-zinc-100 rounded text-[10px] font-bold uppercase">{kit.vendedor}</span>
+                    <td className="px-3 py-3 font-mono text-xs">{kit.eventoSyonet}</td>
+                    <td className="px-3 py-3 font-medium text-xs break-words">{kit.cliente}</td>
+                    <td className="px-3 py-3 text-xs text-zinc-600">{kit.notaFiscal || '-'}</td>
+                    <td className="px-3 py-3">
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-[10px] font-bold uppercase">{kit.vendedor}</span>
                     </td>
                   </tr>
                 ))
