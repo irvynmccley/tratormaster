@@ -26,7 +26,9 @@ import {
   Award,
   BarChart3,
   X,
-  AlertCircle
+  AlertCircle,
+  Search,
+  CheckCircle
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -55,7 +57,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { supabase } from './lib/supabase';
-import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit } from './types';
+import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota } from './types';
 import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS } from './constants';
 
 function cn(...inputs: ClassValue[]) {
@@ -64,8 +66,43 @@ function cn(...inputs: ClassValue[]) {
 
 const COMMISSION_RATE = 0.015; // 1.5%
 
+const formatDate = (dateStr: string | undefined) => {
+  if (!dateStr) return '';
+  const dateStrOnly = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  const parts = dateStrOnly.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
+  }
+  return new Date(dateStr).toLocaleDateString('pt-BR');
+};
+
+const CustomConsorcioTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white p-3 rounded-2xl shadow-xl border border-zinc-100 space-y-2 min-w-[200px]">
+        <p className="font-bold text-sm text-zinc-900">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <div key={index} className="flex items-center justify-between gap-4 text-xs">
+            <span style={{ color: entry.color }} className="font-bold">{entry.name}</span>
+            <span className="font-black text-zinc-900">{entry.value}</span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between gap-4 text-xs pt-2 border-t border-zinc-100">
+          <span className="font-bold text-zinc-500">Valor Vendido</span>
+          <span className="font-black text-yellow-500">
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.valorVendido)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'vendas' | 'metas' | 'kits' | 'comissao'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'vendas' | 'metas' | 'kits' | 'comissao' | 'comissao-recebida'>('dashboard');
   const [sales, setSales] = useState<Sale[]>(() => {
     const saved = localStorage.getItem('trator_sales');
     if (saved) {
@@ -103,50 +140,56 @@ export default function App() {
       try {
         setConnectionStatus('connected');
         // Fetch Sales
-        const { data: salesData, error: salesError } = await supabase
-          .from('sales')
-          .select('*')
-          .order('data', { ascending: false });
-          
-        if (salesError) {
-          console.error('Error fetching sales:', salesError);
-          // If sales fail, we might want to stop or continue with local
-          throw salesError;
-        }
-
-        if (salesData) {
-          const formattedSales: Sale[] = salesData.map(s => ({
-            id: s.id,
-            marca: s.marca as Marca,
-            data: s.data,
-            cliente: s.cliente,
-            valor: Number(s.valor),
-            vendedor: s.vendedor as Seller,
-            eventoSyonet: s.evento_syonet,
-            equipamento: s.equipamento as Equipment,
-            notaFiscal: s.nota_fiscal,
-            condicao: s.condicao as Condition,
-            quantidadeCota: s.quantidade_cota,
-            tipoCota: s.tipo_cota as TipoCota,
-            comissaoPersonalizada: s.comissao_personalizada ? Number(s.comissao_personalizada) : undefined,
-            observacao: s.observacao,
-            recebidoGerente: s.recebido_gerente
-          }));
-          
-          // Merge with local sales that might not have been synced
-          const savedSales = localStorage.getItem('trator_sales');
-          if (savedSales) {
-            const localSales: Sale[] = JSON.parse(savedSales);
-            const unsyncedSales = localSales.filter(ls => !formattedSales.some(fs => fs.id === ls.id));
-            if (unsyncedSales.length > 0) {
-              console.log('Merging unsynced local sales:', unsyncedSales.length);
-              setSales([...unsyncedSales, ...formattedSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()));
+        try {
+          const { data: salesData, error: salesError } = await supabase
+            .from('sales')
+            .select('*')
+            .order('data', { ascending: false });
+            
+          if (salesError) {
+            console.warn('Error fetching sales, falling back to local storage:', salesError);
+            // If sales fail, we continue with local storage
+            if (salesError.code === 'PGRST116' || salesError.message?.includes('does not exist')) {
+              setErrorMessage('Atenção: Tabela "sales" não encontrada. Usando dados locais.');
+            }
+            setConnectionStatus('local');
+          } else if (salesData) {
+            const formattedSales: Sale[] = salesData.map(s => ({
+              id: s.id,
+              marca: s.marca as Marca,
+              data: s.data,
+              cliente: s.cliente,
+              valor: Number(s.valor),
+              vendedor: s.vendedor as Seller,
+              eventoSyonet: s.evento_syonet,
+              equipamento: s.equipamento as Equipment,
+              notaFiscal: s.nota_fiscal,
+              condicao: s.condicao as Condition,
+              quantidadeCota: s.quantidade_cota,
+              tipoCota: s.tipo_cota as TipoCota,
+              comissaoPersonalizada: s.comissao_personalizada ? Number(s.comissao_personalizada) : undefined,
+              observacao: s.observacao,
+              recebidoGerente: s.recebido_gerente
+            }));
+            
+            // Merge with local sales that might not have been synced
+            const savedSales = localStorage.getItem('trator_sales');
+            if (savedSales) {
+              const localSales: Sale[] = JSON.parse(savedSales);
+              const unsyncedSales = localSales.filter(ls => !formattedSales.some(fs => fs.id === ls.id));
+              if (unsyncedSales.length > 0) {
+                console.log('Merging unsynced local sales:', unsyncedSales.length);
+                setSales([...unsyncedSales, ...formattedSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()));
+              } else {
+                setSales(formattedSales);
+              }
             } else {
               setSales(formattedSales);
             }
-          } else {
-            setSales(formattedSales);
           }
+        } catch (e) {
+          console.warn('Failed to process sales:', e);
+          setConnectionStatus('local');
         }
 
         // Fetch Goals
@@ -402,6 +445,49 @@ export default function App() {
     }
   };
 
+  const handleBackupJSON = () => {
+    const dataObj = { sales, goals, companyGoals };
+    const jsonStr = JSON.stringify(dataObj, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup_banco_de_dados_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBackupExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Vendas
+    const wsVendas = XLSX.utils.json_to_sheet(sales.map(s => ({
+      Data: formatDate(s.data),
+      Vendedor: s.vendedor,
+      Marca: s.marca,
+      Equipamento: s.equipamento,
+      Valor: s.valor,
+      Cliente: s.cliente,
+      'Nota Fiscal': s.notaFiscal,
+      Condição: s.condicao,
+      'Quantidade Cota': s.quantidadeCota,
+      'Tipo Cota': s.tipoCota,
+      'Comissão Personalizada': s.comissaoPersonalizada,
+      Observação: s.observacao,
+      'Recebido Gerente': s.recebidoGerente ? 'Sim' : 'Não'
+    })));
+    XLSX.utils.book_append_sheet(wb, wsVendas, "Vendas");
+
+    // Metas
+    const wsMetas = XLSX.utils.json_to_sheet(goals);
+    XLSX.utils.book_append_sheet(wb, wsMetas, "Metas Vendedores");
+
+    const wsMetasEmpresa = XLSX.utils.json_to_sheet(companyGoals);
+    XLSX.utils.book_append_sheet(wb, wsMetasEmpresa, "Metas Empresa");
+
+    XLSX.writeFile(wb, `backup_planilhas_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
@@ -436,13 +522,32 @@ export default function App() {
             </div>
           </div>
           
-          <nav className="flex bg-zinc-900 p-1 rounded-xl overflow-x-auto max-w-full">
-            <TabButton 
-              active={activeTab === 'dashboard'} 
-              onClick={() => setActiveTab('dashboard')}
-              icon={<LayoutDashboard size={18} />}
-              label="Dashboard"
-            />
+          <div className="flex flex-col md:flex-row items-center gap-4">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleBackupJSON}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
+                title="Backup Banco de Dados (JSON)"
+              >
+                <Download size={14} />
+                JSON
+              </button>
+              <button 
+                onClick={handleBackupExcel}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
+                title="Backup Planilhas (Excel)"
+              >
+                <FileSpreadsheet size={14} />
+                Excel
+              </button>
+            </div>
+            <nav className="flex bg-zinc-900 p-1 rounded-xl overflow-x-auto max-w-full">
+              <TabButton 
+                active={activeTab === 'dashboard'} 
+                onClick={() => setActiveTab('dashboard')}
+                icon={<LayoutDashboard size={18} />}
+                label="Dashboard"
+              />
             <TabButton 
               active={activeTab === 'vendas'} 
               onClick={() => setActiveTab('vendas')}
@@ -467,7 +572,14 @@ export default function App() {
               icon={<DollarSign size={18} />}
               label="Comissão Gerente"
             />
+            <TabButton 
+              active={activeTab === 'comissao-recebida'} 
+              onClick={() => setActiveTab('comissao-recebida')}
+              icon={<CheckCircle size={18} />}
+              label="Comissões Recebidas"
+            />
           </nav>
+          </div>
         </div>
       </header>
 
@@ -567,6 +679,16 @@ export default function App() {
               <ComissaoGerenteTab sales={sales} onToggleRecebido={toggleRecebidoGerente} />
             </motion.div>
           )}
+          {activeTab === 'comissao-recebida' && (
+            <motion.div 
+              key="comissao-recebida"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <ComissaoRecebidaTab sales={sales} onToggleRecebido={toggleRecebidoGerente} />
+            </motion.div>
+          )}
         </AnimatePresence>
       </main>
 
@@ -639,18 +761,25 @@ function DashboardTab({
   // 4. Performance de Consórcio por Consultor
   const consorcioPerformance = useMemo(() => {
     return SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).map(seller => {
-      const realized = sales.filter(s => 
+      const sellerSales = sales.filter(s => 
         (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
         s.equipamento === 'Consórcio'
-      ).reduce((acc, s) => acc + (s.quantidadeCota || 1), 0);
+      );
+      const realized = sellerSales.reduce((acc, s) => acc + (s.quantidadeCota || 1), 0);
+      const valorVendido = sellerSales.reduce((acc, s) => acc + s.valor, 0);
       const meta = goals.filter(g => g.vendedor === seller && g.equipamento === 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
       return {
         name: seller,
         realizado: realized,
-        meta: meta
+        meta: meta,
+        valorVendido
       };
     }).filter(p => p.meta > 0 || p.realizado > 0);
   }, [sales, goals]);
+
+  const totalValorConsorcio = useMemo(() => {
+    return sales.filter(s => s.equipamento === 'Consórcio').reduce((acc, s) => acc + s.valor, 0);
+  }, [sales]);
 
   // 3. Acompanhamento Mensal da Empresa (Realizado vs Meta Total)
   const companyMonthlyProgress = useMemo(() => {
@@ -907,9 +1036,15 @@ function DashboardTab({
               <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Performance de Consórcio por Consultor</h4>
               <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">Cotas Realizadas vs Meta</p>
             </div>
-            <button onClick={() => handleShare('chart-consorcio', 'Consorcio_por_Consultor')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
-              <Share2 size={18} className="text-zinc-400" />
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Total Vendido</p>
+                <p className="text-lg font-black text-yellow-500">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValorConsorcio)}</p>
+              </div>
+              <button onClick={() => handleShare('chart-consorcio', 'Consorcio_por_Consultor')} className="p-2 hover:bg-zinc-50 rounded-xl transition-colors">
+                <Share2 size={18} className="text-zinc-400" />
+              </button>
+            </div>
           </div>
           
           <div className="h-[300px] w-full">
@@ -923,8 +1058,8 @@ function DashboardTab({
                   tick={{ fill: '#a1a1aa', fontSize: 10, fontWeight: 800 }}
                 />
                 <Tooltip 
+                  content={<CustomConsorcioTooltip />}
                   cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
                 />
                 <Bar dataKey="realizado" name="Cotas Realizadas" fill="#18181b" radius={[6, 6, 0, 0]} barSize={40}>
                   <LabelList dataKey="realizado" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#18181b' }} />
@@ -958,41 +1093,45 @@ function StatCard({ label, value, icon, trend }: { label: string, value: string,
 // --- COMISSÃO GERENTE TAB ---
 const MANAGER_COMMISSION_RATE = 0.002; // 0.2%
 
-const formatDate = (dateStr: string | undefined) => {
-  if (!dateStr) return '';
-  const dateStrOnly = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
-  const parts = dateStrOnly.split('-');
-  if (parts.length === 3) {
-    const [y, m, d] = parts;
-    return `${d}/${m}/${y}`;
-  }
-  return new Date(dateStr).toLocaleDateString('pt-BR');
-};
-
 function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onToggleRecebido: (id: string) => void }) {
-  const totalSalesValue = sales.reduce((acc, s) => acc + s.valor, 0);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter only JCB, EP and Clark sales, and only pending (not received)
+  const validBrands = ['JCB', 'EP', 'CLARK'];
+  const eligibleSales = sales.filter(s => {
+    const marca = (s.marca || '').trim().toUpperCase();
+    return validBrands.includes(marca) && !s.recebidoGerente;
+  });
+
+  const totalSalesValue = eligibleSales.reduce((acc, s) => acc + s.valor, 0);
   
-  const salesJCB = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB').reduce((acc, s) => acc + s.valor, 0);
-  const salesEP = sales.filter(s => (s.marca || '').trim().toUpperCase() === 'EP').reduce((acc, s) => acc + s.valor, 0);
-  const salesClark = sales.filter(s => (s.marca || '').trim().toUpperCase() === 'CLARK').reduce((acc, s) => acc + s.valor, 0);
+  const salesJCB = eligibleSales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB').reduce((acc, s) => acc + s.valor, 0);
+  const salesEP = eligibleSales.filter(s => (s.marca || '').trim().toUpperCase() === 'EP').reduce((acc, s) => acc + s.valor, 0);
+  const salesClark = eligibleSales.filter(s => (s.marca || '').trim().toUpperCase() === 'CLARK').reduce((acc, s) => acc + s.valor, 0);
 
   const getSaleCommission = (s: Sale) => {
-    if (s.marca === 'Consórcio' && s.tipoCota === 'Campanha Pontual' && s.comissaoPersonalizada !== undefined) {
-      return s.comissaoPersonalizada;
-    }
     return s.valor * MANAGER_COMMISSION_RATE;
   };
 
-  const pendingSales = sales.filter(s => !s.recebidoGerente);
-  const totalManagerCommission = pendingSales.reduce((acc, s) => acc + getSaleCommission(s), 0);
+  const totalManagerCommission = eligibleSales.reduce((acc, s) => acc + getSaleCommission(s), 0);
 
-  const sortedSales = [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+  const filteredSales = eligibleSales.filter(s => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (s.cliente || '').toLowerCase().includes(searchLower) ||
+      (s.equipamento || '').toLowerCase().includes(searchLower) ||
+      (s.notaFiscal || '').toLowerCase().includes(searchLower)
+    );
+  });
+
+  const sortedSales = [...filteredSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 
   return (
     <div className="space-y-8">
       <div className="bg-black text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/10 rounded-full -mr-10 -mt-10 blur-3xl" />
-        <h3 className="text-zinc-400 text-sm font-medium mb-4">Resumo de Vendas e Comissão</h3>
+        <h3 className="text-zinc-400 text-sm font-medium mb-4">Resumo de Vendas e Comissão (JCB, EP, Clark)</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Total de Vendas</p>
@@ -1018,11 +1157,21 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-zinc-100 overflow-hidden">
-        <div className="p-6 border-b border-zinc-100">
+        <div className="p-6 border-b border-zinc-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <h3 className="font-bold flex items-center gap-2">
             <TrendingUp size={20} className="text-yellow-500" />
             Detalhamento de Comissões - Gerência
           </h3>
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+            <input 
+              type="text" 
+              placeholder="Buscar..." 
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -1031,6 +1180,7 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
                 <th className="px-3 py-3 whitespace-nowrap">Data</th>
                 <th className="px-3 py-3">Cliente</th>
                 <th className="px-3 py-3">Equipamento</th>
+                <th className="px-3 py-3 whitespace-nowrap">Nota Fiscal</th>
                 <th className="px-3 py-3 whitespace-nowrap">Valor da Venda</th>
                 <th className="px-3 py-3 whitespace-nowrap">Comissão (0,2%)</th>
                 <th className="px-3 py-3 whitespace-nowrap">Recebido?</th>
@@ -1039,7 +1189,7 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
             <tbody className="divide-y divide-zinc-100">
               {sortedSales.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-12 text-center text-zinc-400 italic">Nenhuma venda para calcular comissão.</td>
+                  <td colSpan={7} className="px-3 py-12 text-center text-zinc-400 italic">Nenhuma venda para calcular comissão.</td>
                 </tr>
               ) : (
                 sortedSales.map(sale => {
@@ -1054,6 +1204,7 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
                       </td>
                       <td className={cn("px-3 py-3 font-medium text-xs break-words", sale.recebidoGerente && "line-through")}>{sale.cliente}</td>
                       <td className={cn("px-3 py-3 text-xs text-zinc-600 break-words", sale.recebidoGerente && "line-through")}>{sale.equipamento || '-'}</td>
+                      <td className={cn("px-3 py-3 text-xs text-zinc-600 break-words", sale.recebidoGerente && "line-through")}>{sale.notaFiscal || '-'}</td>
                       <td className={cn("px-3 py-3 whitespace-nowrap", sale.recebidoGerente && "line-through")}>
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.valor)}
                       </td>
@@ -1084,6 +1235,136 @@ function ComissaoGerenteTab({ sales, onToggleRecebido }: { sales: Sale[], onTogg
                   <td colSpan={4} className="px-3 py-4 font-bold text-right uppercase tracking-widest text-[10px]">Total Pendente Gerente:</td>
                   <td colSpan={2} className="px-3 py-4 font-black text-xl text-yellow-400 whitespace-nowrap">
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalManagerCommission)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComissaoRecebidaTab({ sales, onToggleRecebido }: { sales: Sale[], onToggleRecebido: (id: string) => void }) {
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter only JCB, EP and Clark sales, and only received
+  const validBrands = ['JCB', 'EP', 'CLARK'];
+  const eligibleSales = sales.filter(s => {
+    const marca = (s.marca || '').trim().toUpperCase();
+    return validBrands.includes(marca) && s.recebidoGerente;
+  });
+
+  const getSaleCommission = (s: Sale) => {
+    return s.valor * MANAGER_COMMISSION_RATE;
+  };
+
+  const totalReceivedCommission = eligibleSales.reduce((acc, s) => acc + getSaleCommission(s), 0);
+
+  const filteredSales = eligibleSales.filter(s => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (s.cliente || '').toLowerCase().includes(searchLower) ||
+      (s.equipamento || '').toLowerCase().includes(searchLower) ||
+      (s.notaFiscal || '').toLowerCase().includes(searchLower)
+    );
+  });
+
+  const sortedSales = [...filteredSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+
+  return (
+    <div className="space-y-8">
+      <div className="bg-black text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-green-400/10 rounded-full -mr-10 -mt-10 blur-3xl" />
+        <h3 className="text-zinc-400 text-sm font-medium mb-4">Comissões Recebidas (JCB, EP, Clark)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Total Recebido</p>
+            <h4 className="text-3xl font-black text-green-400">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceivedCommission)}
+            </h4>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-zinc-100 overflow-hidden">
+        <div className="p-6 border-b border-zinc-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <h3 className="font-bold flex items-center gap-2">
+            <CheckCircle size={20} className="text-green-500" />
+            Vendas com Comissão Recebida
+          </h3>
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+            <input 
+              type="text" 
+              placeholder="Buscar..." 
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+            />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <th className="px-3 py-3 whitespace-nowrap">Data</th>
+                <th className="px-3 py-3">Cliente</th>
+                <th className="px-3 py-3">Equipamento</th>
+                <th className="px-3 py-3 whitespace-nowrap">Nota Fiscal</th>
+                <th className="px-3 py-3 whitespace-nowrap">Valor da Venda</th>
+                <th className="px-3 py-3 whitespace-nowrap">Comissão (0,2%)</th>
+                <th className="px-3 py-3 whitespace-nowrap">Ação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {sortedSales.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-12 text-center text-zinc-400 italic">Nenhuma comissão recebida.</td>
+                </tr>
+              ) : (
+                sortedSales.map(sale => {
+                  const commission = getSaleCommission(sale);
+                  return (
+                    <tr key={sale.id} className="hover:bg-zinc-50 transition-colors">
+                      <td className="px-3 py-3 text-xs text-zinc-600 whitespace-nowrap">
+                        {formatDate(sale.data)}
+                      </td>
+                      <td className="px-3 py-3 font-medium text-xs break-words">{sale.cliente}</td>
+                      <td className="px-3 py-3 text-xs text-zinc-600 break-words">{sale.equipamento || '-'}</td>
+                      <td className="px-3 py-3 text-xs text-zinc-600 break-words">{sale.notaFiscal || '-'}</td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.valor)}
+                      </td>
+                      <td className="px-3 py-3 text-green-600 font-bold whitespace-nowrap">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(commission)}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            checked={sale.recebidoGerente}
+                            onChange={() => onToggleRecebido(sale.id)}
+                            className="w-5 h-5 accent-green-500 cursor-pointer flex-shrink-0"
+                          />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-green-600">
+                            Desmarcar
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            {sortedSales.length > 0 && (
+              <tfoot className="bg-zinc-900 text-white">
+                <tr>
+                  <td colSpan={5} className="px-3 py-4 font-bold text-right uppercase tracking-widest text-[10px]">Total Recebido:</td>
+                  <td colSpan={2} className="px-3 py-4 font-black text-xl text-green-400 whitespace-nowrap">
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceivedCommission)}
                   </td>
                 </tr>
               </tfoot>
@@ -1151,7 +1432,8 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
       return;
     }
     
-    const dataIso = new Date(formData.data || new Date()).toISOString();
+    const dateStr = formData.data || new Date().toISOString().split('T')[0];
+    const dataIso = `${dateStr}T12:00:00.000Z`;
 
     const saleData: any = {
       marca: formData.marca,
@@ -1176,6 +1458,10 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
     } else if (formData.marca === 'Consórcio') {
       saleData.quantidadeCota = Number(formData.quantidadeCota);
       saleData.equipamento = 'Consórcio';
+      saleData.tipoCota = formData.tipoCota;
+      if (formData.tipoCota === 'Campanha Pontual') {
+        saleData.comissaoPersonalizada = Number(formData.comissaoPersonalizada);
+      }
     }
 
     if (editingId) {
