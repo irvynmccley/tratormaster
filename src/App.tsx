@@ -731,8 +731,9 @@ function DashboardTab({
 
   // 1. Performance por Equipamento (Empresa) - Realizado vs Meta Empresa
   const equipmentPerformance = useMemo(() => {
-    return EQUIPMENTS.filter(e => e !== 'Consórcio').map(equip => {
-      const realized = sales.filter(s => s.equipamento === equip && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
+    return EQUIPMENTS.filter(e => e !== 'Consórcio' && e !== '3CX Plus').map(equip => {
+      const isTargetEquip = (saleEquip: string) => saleEquip === equip || (equip === 'Retro 3CX (BHL)' && saleEquip === '3CX Plus');
+      const realized = sales.filter(s => isTargetEquip(s.equipamento || '') && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
       const meta = companyGoals.find(g => g.equipamento === equip)?.meta || 0;
       return {
         name: equip,
@@ -1966,14 +1967,16 @@ function MetasTab({
       </div>
 
       <div className="grid grid-cols-1 gap-10">
-        {EQUIPMENTS.map(equip => {
+        {EQUIPMENTS.filter(e => e !== '3CX Plus').map(equip => {
           const companyGoal = localCompanyGoals.find(cg => cg.equipamento === equip)?.meta || 0;
           const individualGoals = localGoals.filter(g => g.equipamento === equip && targetSellers.includes(g.vendedor));
           const distributedTotal = individualGoals.reduce((acc, g) => acc + g.meta, 0);
           
+          const isTargetEquip = (saleEquip: string) => saleEquip === equip || (equip === 'Retro 3CX (BHL)' && saleEquip === '3CX Plus');
+
           const realized = equip === 'Consórcio'
             ? sales.filter(s => s.equipamento === 'Consórcio').reduce((acc, s) => acc + (s.quantidadeCota || 1), 0)
-            : sales.filter(s => s.equipamento === equip && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
+            : sales.filter(s => isTargetEquip(s.equipamento || '') && (s.marca || 'JCB').trim().toUpperCase() === 'JCB').length;
             
           const remaining = companyGoal - distributedTotal;
           
@@ -2063,7 +2066,7 @@ function MetasTab({
                         ).reduce((acc, s) => acc + (s.quantidadeCota || 1), 0)
                       : sales.filter(s => 
                           (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && 
-                          s.equipamento === equip && 
+                          isTargetEquip(s.equipamento || '') && 
                           (s.marca || 'JCB').trim().toUpperCase() === 'JCB'
                         ).length;
                         
