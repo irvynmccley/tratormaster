@@ -56,7 +56,22 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
-import { supabase } from './lib/supabase';
+import { 
+  fetchSales, 
+  createSale as pbCreateSale, 
+  updateSale as pbUpdateSale, 
+  deleteSale as pbDeleteSale, 
+  toggleRecebidoGerente as pbToggleRecebidoGerente,
+  fetchGoals, 
+  saveAllGoals as pbSaveAllGoals,
+  updateGoal as pbUpdateGoal,
+  fetchCompanyGoals, 
+  updateCompanyGoal as pbUpdateCompanyGoal,
+  authService,
+  isPocketBaseConfigured
+} from './lib/pocketbase';
+import { LoginModal } from './components/LoginModal';
+import { KeyRound, LogOut } from 'lucide-react';
 import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota } from './types';
 import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS } from './constants';
 
@@ -128,127 +143,93 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'local' | 'error'>('local');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!supabase) {
-      console.warn('Supabase not configured. Using local storage as fallback.');
-      setConnectionStatus('local');
-      setIsLoading(false);
-      return;
-    }
+  // Authentication State
+  const [user, setUser] = useState<any>(() => authService.getUser());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => authService.isValid());
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [loginModalMessage, setLoginModalMessage] = useState<string | undefined>(undefined);
 
+  useEffect(() => {
+    const unsubscribe = authService.onAuthChange((_token, record) => {
+      setUser(record);
+      setIsAuthenticated(authService.isValid());
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
+  const handleLogout = () => {
+    if (window.confirm('Tem certeza que deseja sair da conta de gestor?')) {
+      authService.logout();
+      setUser(null);
+      setIsAuthenticated(false);
+    }
+  };
+
+  const requireAuth = (actionName: string): boolean => {
+    if (!isAuthenticated) {
+      setLoginModalMessage(`Identifique-se como gestor para ${actionName}.`);
+      setIsLoginModalOpen(true);
+      return false;
+    }
+    return true;
+  };
+
+  useEffect(() => {
     const fetchData = async () => {
+      setIsLoading(true);
       try {
-        setConnectionStatus('connected');
-        // Fetch Sales
-        try {
-          const { data: salesData, error: salesError } = await supabase
-            .from('sales')
-            .select('*')
-            .order('data', { ascending: false });
-            
-          if (salesError) {
-            console.warn('Error fetching sales, falling back to local storage:', salesError);
-            // If sales fail, we continue with local storage
-            if (salesError.code === 'PGRST116' || salesError.message?.includes('does not exist')) {
-              setErrorMessage('Atenção: Tabela "sales" não encontrada. Usando dados locais.');
-            }
-            setConnectionStatus('local');
-          } else if (salesData) {
-            const formattedSales: Sale[] = salesData.map(s => ({
-              id: s.id,
-              marca: s.marca as Marca,
-              data: s.data,
-              cliente: s.cliente,
-              valor: Number(s.valor),
-              vendedor: s.vendedor as Seller,
-              eventoSyonet: s.evento_syonet,
-              equipamento: s.equipamento as Equipment,
-              notaFiscal: s.nota_fiscal,
-              condicao: s.condicao as Condition,
-              quantidadeCota: s.quantidade_cota,
-              tipoCota: s.tipo_cota as TipoCota,
-              comissaoPersonalizada: s.comissao_personalizada ? Number(s.comissao_personalizada) : undefined,
-              observacao: s.observacao,
-              recebidoGerente: s.recebido_gerente
-            }));
-            
-            // Merge with local sales that might not have been synced
-            const savedSales = localStorage.getItem('trator_sales');
-            if (savedSales) {
-              const localSales: Sale[] = JSON.parse(savedSales);
-              const unsyncedSales = localSales.filter(ls => !formattedSales.some(fs => fs.id === ls.id));
-              if (unsyncedSales.length > 0) {
-                console.log('Merging unsynced local sales:', unsyncedSales.length);
-                setSales([...unsyncedSales, ...formattedSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()));
+        if (isPocketBaseConfigured) {
+          setConnectionStatus('connected');
+          
+          // 1. Fetch Sales
+          try {
+            const remoteSales = await fetchSales();
+            if (remoteSales && remoteSales.length > 0) {
+              const savedSales = localStorage.getItem('trator_sales');
+              if (savedSales) {
+                const localSales: Sale[] = JSON.parse(savedSales);
+                const unsynced = localSales.filter(ls => !remoteSales.some(rs => rs.id === ls.id));
+                if (unsynced.length > 0) {
+                  setSales([...unsynced, ...remoteSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()));
+                } else {
+                  setSales(remoteSales);
+                }
               } else {
-                setSales(formattedSales);
+                setSales(remoteSales);
               }
-            } else {
-              setSales(formattedSales);
             }
+          } catch (err: any) {
+            console.warn('PocketBase sales fetch failed, using local storage:', err);
+            setConnectionStatus('local');
           }
-        } catch (e) {
-          console.warn('Failed to process sales:', e);
+
+          // 2. Fetch Goals
+          try {
+            const remoteGoals = await fetchGoals();
+            if (remoteGoals && remoteGoals.length > 0) {
+              setGoals(remoteGoals);
+            }
+          } catch (err: any) {
+            console.warn('PocketBase goals fetch failed:', err);
+          }
+
+          // 3. Fetch Company Goals
+          try {
+            const remoteCompanyGoals = await fetchCompanyGoals();
+            if (remoteCompanyGoals && remoteCompanyGoals.length > 0) {
+              setCompanyGoals(remoteCompanyGoals);
+            }
+          } catch (err: any) {
+            console.warn('PocketBase company goals fetch failed:', err);
+          }
+        } else {
           setConnectionStatus('local');
         }
-
-        // Fetch Goals
-        try {
-          const { data: goalsData, error: goalsError } = await supabase
-            .from('goals')
-            .select('*');
-            
-          if (goalsError) {
-            console.warn('Error fetching goals, using defaults:', goalsError);
-          } else if (goalsData && goalsData.length > 0) {
-            const formattedGoals: Goal[] = goalsData.map(g => ({
-              vendedor: g.vendedor as Seller,
-              equipamento: g.equipamento as Equipment,
-              meta: Number(g.meta)
-            }));
-            
-            const mergedGoals = INITIAL_GOALS.map(initialGoal => {
-              const fetchedGoal = formattedGoals.find(g => g.vendedor === initialGoal.vendedor && g.equipamento === initialGoal.equipamento);
-              return fetchedGoal || initialGoal;
-            });
-            setGoals(mergedGoals);
-          }
-        } catch (e) {
-          console.warn('Failed to process goals:', e);
-        }
-
-        // Fetch Company Goals
-        try {
-          const { data: companyGoalsData, error: companyGoalsError } = await supabase
-            .from('company_goals')
-            .select('*');
-            
-          if (companyGoalsError) {
-            console.warn('Error fetching company goals, using defaults:', companyGoalsError);
-            // If it's just a missing table, don't block the whole app, but warn the user
-            if (companyGoalsError.code === 'PGRST116' || companyGoalsError.message.includes('schema cache') || companyGoalsError.message.includes('does not exist')) {
-              setErrorMessage('Atenção: Tabela "company_goals" não encontrada. As metas da empresa usarão valores padrão.');
-              // We don't set connectionStatus to 'error' here to keep the app functional
-            }
-          } else if (companyGoalsData && companyGoalsData.length > 0) {
-            const formattedCompanyGoals: CompanyGoal[] = companyGoalsData.map(g => ({
-              equipamento: g.equipamento as Equipment,
-              meta: Number(g.meta)
-            }));
-            
-            const mergedCompanyGoals = INITIAL_COMPANY_GOALS.map(initialGoal => {
-              const fetchedGoal = formattedCompanyGoals.find(g => g.equipamento === initialGoal.equipamento);
-              return fetchedGoal || initialGoal;
-            });
-            setCompanyGoals(mergedCompanyGoals);
-          }
-        } catch (e) {
-          console.warn('Failed to process company goals:', e);
-        }
       } catch (error: any) {
-        console.error('Error fetching data from Supabase:', error);
-        setConnectionStatus('error');
-        setErrorMessage(error.message || 'Erro ao conectar com o banco de dados.');
+        console.error('Error fetching data from PocketBase:', error);
+        setConnectionStatus('local');
       } finally {
         setIsLoading(false);
       }
@@ -270,6 +251,7 @@ export default function App() {
   }, [companyGoals]);
 
   const addSale = async (newSale: Omit<Sale, 'id' | 'recebidoGerente'>) => {
+    if (!requireAuth('cadastrar uma nova venda')) return;
     const saleId = crypto.randomUUID();
     const sale: Sale = {
       ...newSale,
@@ -280,168 +262,87 @@ export default function App() {
     // Optimistic update
     setSales(prev => [sale, ...prev]);
 
-    if (supabase) {
-      const { error } = await supabase.from('sales').insert([{
-        id: saleId,
-        marca: sale.marca,
-        data: sale.data,
-        cliente: sale.cliente,
-        valor: sale.valor,
-        vendedor: sale.vendedor,
-        evento_syonet: sale.eventoSyonet,
-        equipamento: sale.equipamento,
-        nota_fiscal: sale.notaFiscal,
-        condicao: sale.condicao,
-        quantidade_cota: sale.quantidadeCota,
-        tipo_cota: sale.tipoCota,
-        comissao_personalizada: sale.comissaoPersonalizada,
-        observacao: sale.observacao,
-        recebido_gerente: sale.recebidoGerente
-      }]);
-      
-      if (error) {
-        console.error('Error adding sale:', error);
-        // Revert on error could be implemented here
-      }
+    try {
+      await pbCreateSale(sale);
+    } catch (err) {
+      console.warn('PocketBase offline: venda salva localmente.', err);
     }
   };
 
   const editSale = async (updatedSale: Sale) => {
+    if (!requireAuth('editar esta venda')) return;
     setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
 
-    if (supabase) {
-      const { error } = await supabase.from('sales').update({
-        marca: updatedSale.marca,
-        data: updatedSale.data,
-        cliente: updatedSale.cliente,
-        valor: updatedSale.valor,
-        vendedor: updatedSale.vendedor,
-        evento_syonet: updatedSale.eventoSyonet,
-        equipamento: updatedSale.equipamento,
-        nota_fiscal: updatedSale.notaFiscal,
-        condicao: updatedSale.condicao,
-        quantidade_cota: updatedSale.quantidadeCota,
-        tipo_cota: updatedSale.tipoCota,
-        comissao_personalizada: updatedSale.comissaoPersonalizada,
-        observacao: updatedSale.observacao,
-        recebido_gerente: updatedSale.recebidoGerente
-      }).eq('id', updatedSale.id);
-
-      if (error) console.error('Error updating sale:', error);
+    try {
+      await pbUpdateSale(updatedSale);
+    } catch (err) {
+      console.warn('PocketBase offline: atualização salva localmente.', err);
     }
   };
 
   const toggleRecebidoGerente = async (id: string) => {
+    if (!requireAuth('alterar o status de recebimento da comissão')) return;
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
     
     const newStatus = !sale.recebidoGerente;
-    
     setSales(prev => prev.map(s => 
       s.id === id ? { ...s, recebidoGerente: newStatus } : s
     ));
 
-    if (supabase) {
-      const { error } = await supabase.from('sales').update({
-        recebido_gerente: newStatus
-      }).eq('id', id);
-
-      if (error) console.error('Error toggling recebido_gerente:', error);
+    try {
+      await pbToggleRecebidoGerente(id, sale.recebidoGerente);
+    } catch (err) {
+      console.warn('PocketBase offline: status de comissão salvo localmente.', err);
     }
   };
 
   const deleteSale = async (id: string) => {
+    if (!requireAuth('excluir esta venda')) return;
     setSales(prev => prev.filter(s => s.id !== id));
 
-    if (supabase) {
-      const { error } = await supabase.from('sales').delete().eq('id', id);
-      if (error) console.error('Error deleting sale:', error);
+    try {
+      await pbDeleteSale(id);
+    } catch (err) {
+      console.warn('PocketBase offline: exclusão registrada localmente.', err);
     }
   };
 
   const saveAllGoals = async (newCompanyGoals: CompanyGoal[], newGoals: Goal[]) => {
+    if (!requireAuth('salvar metas')) return;
     setCompanyGoals(newCompanyGoals);
     setGoals(newGoals);
 
-    if (supabase) {
-      try {
-        const { data: existingCompanyGoals } = await supabase.from('company_goals').select('id, equipamento');
-        for (const cg of newCompanyGoals) {
-          const existing = existingCompanyGoals?.find(e => e.equipamento === cg.equipamento);
-          if (existing) {
-            await supabase.from('company_goals').update({ meta: cg.meta }).eq('id', existing.id);
-          } else {
-            await supabase.from('company_goals').insert([{ equipamento: cg.equipamento, meta: cg.meta }]);
-          }
-        }
-
-        const { data: existingGoals } = await supabase.from('goals').select('id, vendedor, equipamento');
-        for (const g of newGoals) {
-          const existing = existingGoals?.find(e => e.vendedor === g.vendedor && e.equipamento === g.equipamento);
-          if (existing) {
-            await supabase.from('goals').update({ meta: g.meta }).eq('id', existing.id);
-          } else {
-            await supabase.from('goals').insert([{ vendedor: g.vendedor, equipamento: g.equipamento, meta: g.meta }]);
-          }
-        }
-      } catch (err) {
-        console.error('Error saving all goals:', err);
-      }
+    try {
+      await pbSaveAllGoals(newCompanyGoals, newGoals);
+    } catch (err) {
+      console.warn('PocketBase offline: metas salvas localmente.', err);
     }
   };
 
   const updateGoal = async (vendedor: Seller, equipamento: Equipment, meta: number) => {
+    if (!requireAuth('atualizar meta individual')) return;
     setGoals(prev => prev.map(g => 
       (g.vendedor === vendedor && g.equipamento === equipamento) ? { ...g, meta } : g
     ));
 
-    if (supabase) {
-      // Check if goal exists
-      const { data } = await supabase.from('goals')
-        .select('id')
-        .eq('vendedor', vendedor)
-        .eq('equipamento', equipamento)
-        .maybeSingle();
-
-      if (data) {
-        // Update
-        const { error } = await supabase.from('goals')
-          .update({ meta })
-          .eq('id', data.id);
-        if (error) console.error('Error updating goal:', error);
-      } else {
-        // Insert
-        const { error } = await supabase.from('goals')
-          .insert([{ vendedor, equipamento, meta }]);
-        if (error) console.error('Error inserting goal:', error);
-      }
+    try {
+      await pbUpdateGoal(vendedor, equipamento, meta);
+    } catch (err) {
+      console.warn('PocketBase offline: meta salva localmente.', err);
     }
   };
 
   const updateCompanyGoal = async (equipamento: Equipment, meta: number) => {
+    if (!requireAuth('atualizar meta da empresa')) return;
     setCompanyGoals(prev => prev.map(g => 
       (g.equipamento === equipamento) ? { ...g, meta } : g
     ));
 
-    if (supabase) {
-      // Check if goal exists
-      const { data } = await supabase.from('company_goals')
-        .select('id')
-        .eq('equipamento', equipamento)
-        .maybeSingle();
-
-      if (data) {
-        // Update
-        const { error } = await supabase.from('company_goals')
-          .update({ meta })
-          .eq('id', data.id);
-        if (error) console.error('Error updating company goal:', error);
-      } else {
-        // Insert
-        const { error } = await supabase.from('company_goals')
-          .insert([{ equipamento, meta }]);
-        if (error) console.error('Error inserting company goal:', error);
-      }
+    try {
+      await pbUpdateCompanyGoal(equipamento, meta);
+    } catch (err) {
+      console.warn('PocketBase offline: meta da empresa salva localmente.', err);
     }
   };
 
@@ -524,6 +425,36 @@ export default function App() {
           
           <div className="flex flex-col md:flex-row items-center gap-4">
             <div className="flex items-center gap-2">
+              {!isAuthenticated ? (
+                <button 
+                  onClick={() => {
+                    setLoginModalMessage('Identifique-se como gestor para gerenciar o sistema.');
+                    setIsLoginModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-black rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-yellow-400/20 cursor-pointer"
+                  title="Acesso de Gestor"
+                >
+                  <KeyRound size={14} />
+                  Entrar
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 bg-zinc-900 border border-yellow-400/30 px-2.5 py-1 rounded-lg">
+                  <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                  <span className="text-[10px] text-zinc-300 font-bold truncate max-w-[120px]" title={user?.email}>
+                    {user?.name || user?.email?.split('@')[0]}
+                  </span>
+                  <span className="text-[9px] bg-yellow-400 text-black font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    Gestor
+                  </span>
+                  <button 
+                    onClick={handleLogout}
+                    className="ml-1 text-zinc-400 hover:text-red-400 transition-colors p-0.5 cursor-pointer"
+                    title="Sair do modo gestor"
+                  >
+                    <LogOut size={13} />
+                  </button>
+                </div>
+              )}
               <button 
                 onClick={handleBackupJSON}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
@@ -588,17 +519,9 @@ export default function App() {
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-xl text-sm flex flex-col gap-2">
             <p className="font-bold flex items-center gap-2">
               <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
-              Sincronização Desativada (Modo Local)
+              Operando em Modo Resiliente (Dados Locais / PocketBase)
             </p>
-            <p>O aplicativo não encontrou as chaves de conexão com o Supabase. Os dados estão sendo salvos **apenas neste aparelho**.</p>
-            <div className="mt-2 p-3 bg-white/50 rounded-lg border border-yellow-100">
-              <p className="font-semibold mb-1">Como resolver:</p>
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li>No <strong>AI Studio</strong>: Vá em <strong>Secrets</strong> e adicione <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_ANON_KEY</code>.</li>
-                <li>Na <strong>Vercel</strong>: Vá em <strong>Settings &gt; Environment Variables</strong> e adicione as mesmas chaves.</li>
-                <li>Após adicionar, faça um <strong>Redeploy</strong> na Vercel ou reinicie o preview aqui.</li>
-              </ul>
-            </div>
+            <p>O aplicativo está sincronizado com a base local e pronto para conexão com o PocketBase.</p>
           </div>
         )}
         {errorMessage && (
@@ -611,10 +534,9 @@ export default function App() {
             </button>
             <p className="font-bold flex items-center gap-2">
               <AlertCircle size={16} />
-              Atenção: Problema na Sincronização
+              Atenção: Notificação de Conexão
             </p>
             <p>{errorMessage}</p>
-            <p className="text-xs">Os dados estão sendo salvos apenas neste dispositivo. Verifique as chaves do Supabase nas configurações.</p>
             <button 
               onClick={() => window.location.reload()}
               className="mt-2 text-xs font-bold underline hover:no-underline"
@@ -697,6 +619,14 @@ export default function App() {
           <p className="text-xs uppercase tracking-widest">© 2026 Gestão Gerencial</p>
         </div>
       </footer>
+
+      {/* Login Modal */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={() => setIsLoginModalOpen(false)}
+        message={loginModalMessage}
+      />
     </div>
   );
 }
