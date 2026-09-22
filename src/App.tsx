@@ -116,6 +116,15 @@ const CustomConsorcioTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+const STORAGE_SYNC_VERSION = 'v2026_09_22_pb_clean';
+if (typeof window !== 'undefined' && localStorage.getItem('trator_storage_version') !== STORAGE_SYNC_VERSION) {
+  localStorage.removeItem('trator_sales');
+  localStorage.removeItem('sales');
+  localStorage.removeItem('trator_goals');
+  localStorage.removeItem('trator_company_goals');
+  localStorage.setItem('trator_storage_version', STORAGE_SYNC_VERSION);
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'vendas' | 'metas' | 'kits' | 'comissao' | 'comissao-recebida'>('dashboard');
   const [sales, setSales] = useState<Sale[]>(() => {
