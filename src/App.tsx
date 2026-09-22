@@ -187,18 +187,8 @@ export default function App() {
           try {
             const remoteSales = await fetchSales();
             if (remoteSales && remoteSales.length > 0) {
-              const savedSales = localStorage.getItem('trator_sales');
-              if (savedSales) {
-                const localSales: Sale[] = JSON.parse(savedSales);
-                const unsynced = localSales.filter(ls => !remoteSales.some(rs => rs.id === ls.id));
-                if (unsynced.length > 0) {
-                  setSales([...unsynced, ...remoteSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()));
-                } else {
-                  setSales(remoteSales);
-                }
-              } else {
-                setSales(remoteSales);
-              }
+              setSales(remoteSales);
+              localStorage.setItem('trator_sales', JSON.stringify(remoteSales));
             }
           } catch (err: any) {
             console.warn('PocketBase sales fetch failed, using local storage:', err);
@@ -263,7 +253,8 @@ export default function App() {
     setSales(prev => [sale, ...prev]);
 
     try {
-      await pbCreateSale(sale);
+      const created = await pbCreateSale(sale);
+      setSales(prev => prev.map(s => s.id === saleId ? created : s));
     } catch (err) {
       console.warn('PocketBase offline: venda salva localmente.', err);
     }
