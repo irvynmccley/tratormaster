@@ -67,12 +67,20 @@ import {
   updateGoal as pbUpdateGoal,
   fetchCompanyGoals, 
   updateCompanyGoal as pbUpdateCompanyGoal,
+  fetchProducts,
+  fetchCategories,
+  fetchSellers,
   authService,
   isPocketBaseConfigured
 } from './lib/pocketbase';
-import { LoginModal } from './components/LoginModal';
-import { KeyRound, LogOut } from 'lucide-react';
-import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota } from './types';
+import { LoginPage } from './components/LoginPage';
+import { SettingsDropdown } from './components/SettingsDropdown';
+import { ChangePasswordModal } from './components/modals/ChangePasswordModal';
+import { ManageProductsModal } from './components/modals/ManageProductsModal';
+import { ManageCategoriesModal } from './components/modals/ManageCategoriesModal';
+import { ManageSellersModal } from './components/modals/ManageSellersModal';
+import { LogOut } from 'lucide-react';
+import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota, ProductItem, CategoryItem, SellerItem } from './types';
 import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS } from './constants';
 
 function cn(...inputs: ClassValue[]) {
@@ -155,8 +163,17 @@ export default function App() {
   // Authentication State
   const [user, setUser] = useState<any>(() => authService.getUser());
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => authService.isValid());
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [loginModalMessage, setLoginModalMessage] = useState<string | undefined>(undefined);
+
+  // Settings Modals State
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isManageProductsOpen, setIsManageProductsOpen] = useState(false);
+  const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false);
+  const [isManageSellersOpen, setIsManageSellersOpen] = useState(false);
+
+  // Settings Collections Data
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [sellers, setSellers] = useState<SellerItem[]>([]);
 
   useEffect(() => {
     const unsubscribe = authService.onAuthChange((_token, record) => {
@@ -174,15 +191,6 @@ export default function App() {
       setUser(null);
       setIsAuthenticated(false);
     }
-  };
-
-  const requireAuth = (actionName: string): boolean => {
-    if (!isAuthenticated) {
-      setLoginModalMessage(`Identifique-se como gestor para ${actionName}.`);
-      setIsLoginModalOpen(true);
-      return false;
-    }
-    return true;
   };
 
   useEffect(() => {
@@ -223,6 +231,20 @@ export default function App() {
           } catch (err: any) {
             console.warn('PocketBase company goals fetch failed:', err);
           }
+
+          // 4. Fetch Settings Items (Products, Categories, Sellers)
+          try {
+            const [pList, cList, sList] = await Promise.all([
+              fetchProducts(),
+              fetchCategories(),
+              fetchSellers()
+            ]);
+            setProducts(pList);
+            setCategories(cList);
+            setSellers(sList);
+          } catch (err: any) {
+            console.warn('PocketBase settings fetch failed:', err);
+          }
         } else {
           setConnectionStatus('local');
         }
@@ -250,7 +272,6 @@ export default function App() {
   }, [companyGoals]);
 
   const addSale = async (newSale: Omit<Sale, 'id' | 'recebidoGerente'>) => {
-    if (!requireAuth('cadastrar uma nova venda')) return;
     const saleId = crypto.randomUUID();
     const sale: Sale = {
       ...newSale,
@@ -270,7 +291,6 @@ export default function App() {
   };
 
   const editSale = async (updatedSale: Sale) => {
-    if (!requireAuth('editar esta venda')) return;
     setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
 
     try {
@@ -281,7 +301,6 @@ export default function App() {
   };
 
   const toggleRecebidoGerente = async (id: string) => {
-    if (!requireAuth('alterar o status de recebimento da comissão')) return;
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
     
@@ -298,7 +317,6 @@ export default function App() {
   };
 
   const deleteSale = async (id: string) => {
-    if (!requireAuth('excluir esta venda')) return;
     setSales(prev => prev.filter(s => s.id !== id));
 
     try {
@@ -309,7 +327,6 @@ export default function App() {
   };
 
   const saveAllGoals = async (newCompanyGoals: CompanyGoal[], newGoals: Goal[]) => {
-    if (!requireAuth('salvar metas')) return;
     setCompanyGoals(newCompanyGoals);
     setGoals(newGoals);
 
@@ -321,7 +338,6 @@ export default function App() {
   };
 
   const updateGoal = async (vendedor: Seller, equipamento: Equipment, meta: number) => {
-    if (!requireAuth('atualizar meta individual')) return;
     setGoals(prev => prev.map(g => 
       (g.vendedor === vendedor && g.equipamento === equipamento) ? { ...g, meta } : g
     ));
@@ -334,9 +350,8 @@ export default function App() {
   };
 
   const updateCompanyGoal = async (equipamento: Equipment, meta: number) => {
-    if (!requireAuth('atualizar meta da empresa')) return;
     setCompanyGoals(prev => prev.map(g => 
-      (g.equipamento === equipamento) ? { ...g, meta } : g
+      g.equipamento === equipamento ? { ...g, meta } : g
     ));
 
     try {
@@ -389,10 +404,23 @@ export default function App() {
     XLSX.writeFile(wb, `backup_planilhas_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // Gatekeeper: Authentication required
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        onLoginSuccess={() => {
+          setIsAuthenticated(true);
+          setUser(authService.getUser());
+        }}
+      />
+    );
+  }
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400"></div>
+        <p className="text-xs uppercase font-bold tracking-widest text-zinc-400">Carregando TratorMaster...</p>
       </div>
     );
   }
@@ -425,39 +453,28 @@ export default function App() {
           
           <div className="flex flex-col md:flex-row items-center gap-4">
             <div className="flex items-center gap-2">
-              {!isAuthenticated ? (
-                <button 
-                  onClick={() => {
-                    setLoginModalMessage('Identifique-se como gestor para gerenciar o sistema.');
-                    setIsLoginModalOpen(true);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-black rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-yellow-400/20 cursor-pointer"
-                  title="Acesso de Gestor"
-                >
-                  <KeyRound size={14} />
-                  Entrar
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 bg-zinc-900 border border-yellow-400/30 px-2.5 py-1 rounded-lg">
-                  <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                  <span className="text-[10px] text-zinc-300 font-bold truncate max-w-[120px]" title={user?.email}>
-                    {user?.name || user?.email?.split('@')[0]}
-                  </span>
-                  <span className="text-[9px] bg-yellow-400 text-black font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
-                    Gestor
-                  </span>
-                  <button 
-                    onClick={handleLogout}
-                    className="ml-1 text-zinc-400 hover:text-red-400 transition-colors p-0.5 cursor-pointer"
-                    title="Sair do modo gestor"
-                  >
-                    <LogOut size={13} />
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-2 bg-zinc-900 border border-yellow-400/30 px-2.5 py-1.5 rounded-xl">
+                <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                <span className="text-[10px] text-zinc-300 font-bold truncate max-w-[120px]" title={user?.email}>
+                  {user?.name || user?.email?.split('@')[0]}
+                </span>
+                <span className="text-[9px] bg-yellow-400 text-black font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                  Gestor
+                </span>
+              </div>
+
+              {/* Settings Gear Dropdown */}
+              <SettingsDropdown
+                onOpenChangePassword={() => setIsChangePasswordOpen(true)}
+                onOpenManageProducts={() => setIsManageProductsOpen(true)}
+                onOpenManageCategories={() => setIsManageCategoriesOpen(true)}
+                onOpenManageSellers={() => setIsManageSellersOpen(true)}
+                onLogout={handleLogout}
+              />
+
               <button 
                 onClick={handleBackupJSON}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
                 title="Backup Banco de Dados (JSON)"
               >
                 <Download size={14} />
@@ -465,7 +482,7 @@ export default function App() {
               </button>
               <button 
                 onClick={handleBackupExcel}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
                 title="Backup Planilhas (Excel)"
               >
                 <FileSpreadsheet size={14} />
@@ -563,7 +580,15 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
-              <VendasTab sales={sales} onAddSale={addSale} onEditSale={editSale} onDeleteSale={deleteSale} />
+              <VendasTab 
+                sales={sales} 
+                onAddSale={addSale} 
+                onEditSale={editSale} 
+                onDeleteSale={deleteSale}
+                availableProducts={products}
+                availableCategories={categories}
+                availableSellers={sellers}
+              />
             </motion.div>
           )}
           {activeTab === 'metas' && (
@@ -620,12 +645,31 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Login Modal */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onSuccess={() => setIsLoginModalOpen(false)}
-        message={loginModalMessage}
+      {/* Settings Modals */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+      />
+
+      <ManageProductsModal
+        isOpen={isManageProductsOpen}
+        onClose={() => setIsManageProductsOpen(false)}
+        products={products}
+        onProductsChange={setProducts}
+      />
+
+      <ManageCategoriesModal
+        isOpen={isManageCategoriesOpen}
+        onClose={() => setIsManageCategoriesOpen(false)}
+        categories={categories}
+        onCategoriesChange={setCategories}
+      />
+
+      <ManageSellersModal
+        isOpen={isManageSellersOpen}
+        onClose={() => setIsManageSellersOpen(false)}
+        sellers={sellers}
+        onSellersChange={setSellers}
       />
     </div>
   );
@@ -1308,7 +1352,33 @@ function ComissaoRecebidaTab({ sales, onToggleRecebido }: { sales: Sale[], onTog
 }
 
 // --- VENDAS TAB ---
-function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale[], onAddSale: (sale: any) => void, onEditSale: (sale: Sale) => void, onDeleteSale: (id: string) => void }) {
+function VendasTab({ 
+  sales, 
+  onAddSale, 
+  onEditSale, 
+  onDeleteSale,
+  availableProducts = [],
+  availableCategories = [],
+  availableSellers = []
+}: { 
+  sales: Sale[], 
+  onAddSale: (sale: any) => void, 
+  onEditSale: (sale: Sale) => void, 
+  onDeleteSale: (id: string) => void,
+  availableProducts?: ProductItem[],
+  availableCategories?: CategoryItem[],
+  availableSellers?: SellerItem[]
+}) {
+  const brandOptions = availableCategories.length > 0 
+    ? Array.from(new Set([...availableCategories.map(c => c.name), ...MARCAS]))
+    : MARCAS;
+  const equipmentOptions = availableProducts.length > 0
+    ? Array.from(new Set([...availableProducts.map(p => p.name), ...EQUIPMENTS]))
+    : EQUIPMENTS;
+  const sellerOptions = availableSellers.length > 0
+    ? Array.from(new Set([...availableSellers.map(s => s.name), ...SELLERS]))
+    : SELLERS;
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [filters, setFilters] = useState({
@@ -1456,7 +1526,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                 required
               >
                 <option value="" disabled>Selecione a marca</option>
-                {MARCAS.map(m => <option key={m} value={m}>{m}</option>)}
+                {brandOptions.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </InputGroup>
 
@@ -1502,7 +1572,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                   required
                 >
                   <option value="" disabled>Selecione o equipamento</option>
-                  {EQUIPMENTS.filter(e => e !== 'Consórcio').map(e => <option key={e} value={e}>{e}</option>)}
+                  {equipmentOptions.filter(e => e !== 'Consórcio').map(e => <option key={e} value={e}>{e}</option>)}
                 </select>
               </InputGroup>
             )}
@@ -1575,7 +1645,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                 required
               >
                 <option value="" disabled>Selecione o vendedor</option>
-                {SELLERS.map(s => <option key={s} value={s}>{s}</option>)}
+                {sellerOptions.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </InputGroup>
 
@@ -1668,7 +1738,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
               >
                 <option value="all">Todos</option>
-                {SELLERS.map(s => <option key={s} value={s}>{s}</option>)}
+                {sellerOptions.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div className="space-y-1">
@@ -1679,7 +1749,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
               >
                 <option value="all">Todas</option>
-                {MARCAS.map(m => <option key={m} value={m}>{m}</option>)}
+                {brandOptions.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <div className="space-y-1">
@@ -1690,7 +1760,7 @@ function VendasTab({ sales, onAddSale, onEditSale, onDeleteSale }: { sales: Sale
                 className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
               >
                 <option value="all">Todos</option>
-                {EQUIPMENTS.map(e => <option key={e} value={e}>{e}</option>)}
+                {equipmentOptions.map(e => <option key={e} value={e}>{e}</option>)}
               </select>
             </div>
             <div className="space-y-1">

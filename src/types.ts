@@ -68,3 +68,22 @@ export interface Kit {
   notaFiscal: string;
   vendedor: Seller;
 }
+
+export interface ProductItem {
+  id: string;
+  name: string;
+  active?: boolean;
+}
+
+export interface CategoryItem {
+  id: string;
+  name: string;
+  active?: boolean;
+}
+
+export interface SellerItem {
+  id: string;
+  name: string;
+  email?: string;
+  active?: boolean;
+}

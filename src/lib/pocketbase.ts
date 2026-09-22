@@ -1,6 +1,6 @@
 import PocketBase from 'pocketbase';
-import { Sale, Goal, CompanyGoal, Kit, Seller, Equipment, Condition, Marca, TipoCota } from '../types';
-import { INITIAL_GOALS, INITIAL_COMPANY_GOALS } from '../constants';
+import { Sale, Goal, CompanyGoal, Kit, Seller, Equipment, Condition, Marca, TipoCota, ProductItem, CategoryItem, SellerItem } from '../types';
+import { INITIAL_GOALS, INITIAL_COMPANY_GOALS, EQUIPMENTS, MARCAS, SELLERS } from '../constants';
 
 const pbUrl = import.meta.env.VITE_POCKETBASE_URL || 'https://pb-tratormaster.janagencia.com.br';
 
@@ -22,6 +22,15 @@ export const authService = {
   },
   async login(email: string, pass: string) {
     return await pb.collection('users').authWithPassword(email, pass);
+  },
+  async changePassword(oldPassword: string, newPassword: string) {
+    const user = pb.authStore.record;
+    if (!user) throw new Error('Usuário não autenticado.');
+    return await pb.collection('users').update(user.id, {
+      oldPassword,
+      password: newPassword,
+      passwordConfirm: newPassword
+    });
   },
   logout() {
     pb.authStore.clear();
@@ -204,4 +213,70 @@ export async function createKit(kit: Omit<Kit, 'id'>): Promise<Kit> {
 
 export async function deleteKit(id: string): Promise<void> {
   await pb.collection('kits').delete(id);
+}
+
+// --- PRODUCTS (EQUIPAMENTOS) CRUD ---
+export async function fetchProducts(): Promise<ProductItem[]> {
+  try {
+    const records = await pb.collection('products').getFullList({ sort: 'name' });
+    if (records.length > 0) {
+      return records.map(r => ({ id: r.id, name: r.name, active: r.active ?? true }));
+    }
+  } catch (err) {
+    console.warn('Failed to fetch products from PB, using defaults:', err);
+  }
+  return EQUIPMENTS.map((name, i) => ({ id: `default-${i}`, name, active: true }));
+}
+
+export async function createProduct(name: string): Promise<ProductItem> {
+  const record = await pb.collection('products').create({ name: name.trim(), active: true });
+  return { id: record.id, name: record.name, active: record.active };
+}
+
+export async function deleteProduct(id: string): Promise<void> {
+  await pb.collection('products').delete(id);
+}
+
+// --- CATEGORIES (MARCAS) CRUD ---
+export async function fetchCategories(): Promise<CategoryItem[]> {
+  try {
+    const records = await pb.collection('categories').getFullList({ sort: 'name' });
+    if (records.length > 0) {
+      return records.map(r => ({ id: r.id, name: r.name, active: r.active ?? true }));
+    }
+  } catch (err) {
+    console.warn('Failed to fetch categories from PB, using defaults:', err);
+  }
+  return MARCAS.map((name, i) => ({ id: `default-${i}`, name, active: true }));
+}
+
+export async function createCategory(name: string): Promise<CategoryItem> {
+  const record = await pb.collection('categories').create({ name: name.trim(), active: true });
+  return { id: record.id, name: record.name, active: record.active };
+}
+
+export async function deleteCategory(id: string): Promise<void> {
+  await pb.collection('categories').delete(id);
+}
+
+// --- SELLERS (VENDEDORES) CRUD ---
+export async function fetchSellers(): Promise<SellerItem[]> {
+  try {
+    const records = await pb.collection('sellers').getFullList({ sort: 'name' });
+    if (records.length > 0) {
+      return records.map(r => ({ id: r.id, name: r.name, email: r.email, active: r.active ?? true }));
+    }
+  } catch (err) {
+    console.warn('Failed to fetch sellers from PB, using defaults:', err);
+  }
+  return SELLERS.map((name, i) => ({ id: `default-${i}`, name, active: true }));
+}
+
+export async function createSeller(name: string, email?: string): Promise<SellerItem> {
+  const record = await pb.collection('sellers').create({ name: name.trim(), email: email?.trim(), active: true });
+  return { id: record.id, name: record.name, email: record.email, active: record.active };
+}
+
+export async function deleteSeller(id: string): Promise<void> {
+  await pb.collection('sellers').delete(id);
 }
