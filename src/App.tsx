@@ -79,6 +79,7 @@ import { ChangePasswordModal } from './components/modals/ChangePasswordModal';
 import { ManageProductsModal } from './components/modals/ManageProductsModal';
 import { ManageCategoriesModal } from './components/modals/ManageCategoriesModal';
 import { ManageSellersModal } from './components/modals/ManageSellersModal';
+import { MonthMultiSelect, formatMonthYear } from './components/MonthMultiSelect';
 import { LogOut } from 'lucide-react';
 import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota, ProductItem, CategoryItem, SellerItem } from './types';
 import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS } from './constants';
@@ -1381,12 +1382,18 @@ function VendasTab({
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<{
+    search: string;
+    vendedor: string;
+    marca: string;
+    equipamento: string;
+    months: string[];
+  }>({
     search: '',
     vendedor: 'all',
     marca: 'all',
     equipamento: 'all',
-    month: 'all'
+    months: []
   });
   
   const initialFormState: Partial<Sale> = {
@@ -1477,10 +1484,22 @@ function VendasTab({
     setTimeout(() => setSuccessMessage(''), 3000);
   };
 
-  const availableMonths = Array.from(new Set(sales.map(s => {
-    const d = new Date(s.data);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-  }))).sort().reverse();
+  const availableMonths = useMemo(() => {
+    return Array.from(new Set(sales.map(s => {
+      const d = new Date(s.data);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    }))).sort().reverse();
+  }, [sales]);
+
+  const monthSalesCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    sales.forEach(s => {
+      const d = new Date(s.data);
+      const m = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      counts[m] = (counts[m] || 0) + 1;
+    });
+    return counts;
+  }, [sales]);
 
   const filteredSales = sales.filter(s => {
     const matchesSearch = s.cliente.toLowerCase().includes(filters.search.toLowerCase());
@@ -1489,16 +1508,20 @@ function VendasTab({
     const matchesEquipamento = filters.equipamento === 'all' || s.equipamento === filters.equipamento;
     
     let matchesMonth = true;
-    if (filters.month !== 'all') {
+    if (filters.months && filters.months.length > 0) {
       const d = new Date(s.data);
       const monthStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      matchesMonth = monthStr === filters.month;
+      matchesMonth = filters.months.includes(monthStr);
     }
     
     return matchesSearch && matchesVendedor && matchesMarca && matchesEquipamento && matchesMonth;
   });
 
   const sortedSales = [...filteredSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+
+  const totalFilteredValue = useMemo(() => {
+    return sortedSales.reduce((acc, s) => acc + (Number(s.valor) || 0), 0);
+  }, [sortedSales]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1765,42 +1788,73 @@ function VendasTab({
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Mês/Ano</label>
-              <select 
-                value={filters.month}
-                onChange={e => setFilters({...filters, month: e.target.value})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
-              >
-                <option value="all">Todos</option>
-                {availableMonths.map(m => {
-                  const [year, month] = m.split('-');
-                  const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleString('pt-BR', { month: 'long' });
-                  return (
-                    <option key={m} value={m}>
-                      {monthName.charAt(0).toUpperCase() + monthName.slice(1)} {year}
-                    </option>
-                  );
-                })}
-              </select>
+              <MonthMultiSelect 
+                availableMonths={availableMonths}
+                selectedMonths={filters.months}
+                onChange={(months) => setFilters(prev => ({ ...prev, months }))}
+                monthSalesCount={monthSalesCount}
+              />
             </div>
           </div>
-          {(filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.month !== 'all') && (
-            <button 
-              onClick={() => setFilters({ search: '', vendedor: 'all', marca: 'all', equipamento: 'all', month: 'all' })}
-              className="text-[10px] font-bold uppercase tracking-widest text-yellow-600 hover:text-yellow-700 underline"
-            >
-              Limpar Filtros
-            </button>
+
+          {/* Badges de Meses Selecionados */}
+          {filters.months.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-100">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mr-1">
+                Meses Selecionados:
+              </span>
+              {filters.months.map(m => (
+                <span 
+                  key={m}
+                  className="inline-flex items-center gap-1.5 bg-yellow-100/80 border border-yellow-300 text-yellow-950 font-bold px-2.5 py-0.5 rounded-lg text-xs"
+                >
+                  <span>{formatMonthYear(m)}</span>
+                  <button 
+                    type="button"
+                    onClick={() => setFilters(prev => ({ ...prev, months: prev.months.filter(x => x !== m) }))}
+                    className="hover:bg-yellow-200 rounded p-0.5 text-yellow-800 transition-colors cursor-pointer"
+                    title={`Remover ${formatMonthYear(m)}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+              <button 
+                type="button"
+                onClick={() => setFilters(prev => ({ ...prev, months: [] }))}
+                className="text-xs text-zinc-400 hover:text-zinc-700 underline font-medium ml-1 cursor-pointer"
+              >
+                Limpar meses
+              </button>
+            </div>
+          )}
+
+          {(filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.months.length > 0) && (
+            <div className="flex items-center justify-between pt-1">
+              <button 
+                onClick={() => setFilters({ search: '', vendedor: 'all', marca: 'all', equipamento: 'all', months: [] })}
+                className="text-[10px] font-bold uppercase tracking-widest text-yellow-600 hover:text-yellow-700 underline cursor-pointer"
+              >
+                Limpar Filtros
+              </button>
+            </div>
           )}
         </div>
 
         {/* Sales List */}
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-100 overflow-hidden">
-          <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
+          <div className="p-6 border-b border-zinc-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <h3 className="font-bold flex items-center gap-2">
               <TrendingUp size={20} className="text-yellow-500" />
-              {filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.month !== 'all' ? 'Vendas Filtradas' : 'Últimas Vendas'}
-              <span className="text-xs text-zinc-400 font-normal ml-2">({sortedSales.length} registros)</span>
+              {filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.months.length > 0 ? 'Vendas Filtradas' : 'Últimas Vendas'}
+              <span className="text-xs text-zinc-400 font-normal ml-2">({sortedSales.length} {sortedSales.length === 1 ? 'registro' : 'registros'})</span>
             </h3>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg shadow-sm">
+                Total: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalFilteredValue)}
+              </span>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
