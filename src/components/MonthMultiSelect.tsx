@@ -107,9 +107,8 @@ export const MonthMultiSelect: React.FC<MonthMultiSelectProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(prev => !prev)}
-        className={`w-full bg-zinc-50 border rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between gap-2 transition-all outline-none focus:ring-2 focus:ring-yellow-400 ${
-          isOpen ? 'ring-2 ring-yellow-400 border-yellow-400 bg-white' : 'border-zinc-200 hover:border-zinc-300'
-        } ${selectedMonths.length > 0 ? 'border-yellow-400/80 font-medium' : ''}`}
+        className={`w-full bg-zinc-50 border rounded-lg px-3 py-2 text-sm text-left flex items-center justify-between gap-2 transition-all outline-none focus:ring-2 focus:ring-yellow-400 ${isOpen ? 'ring-2 ring-yellow-400 border-yellow-400 bg-white' : 'border-zinc-200 hover:border-zinc-300'
+          } ${selectedMonths.length > 0 ? 'border-yellow-400/80 font-medium' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -149,7 +148,7 @@ export const MonthMultiSelect: React.FC<MonthMultiSelectProps> = ({
 
       {/* Popover Dropdown */}
       {isOpen && (
-        <div 
+        <div
           className="absolute z-50 mt-1.5 right-0 w-72 sm:w-80 bg-white rounded-xl shadow-2xl border border-zinc-200 p-3 animate-in fade-in zoom-in-95 duration-150"
           style={{ minWidth: '280px' }}
         >
@@ -211,19 +210,17 @@ export const MonthMultiSelect: React.FC<MonthMultiSelectProps> = ({
                   <div
                     key={month}
                     onClick={() => toggleMonth(month)}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs cursor-pointer select-none transition-colors ${
-                      isSelected
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs cursor-pointer select-none transition-colors ${isSelected
                         ? 'bg-yellow-50/80 text-yellow-950 font-semibold'
                         : 'hover:bg-zinc-50 text-zinc-700'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
-                          isSelected
+                        className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${isSelected
                             ? 'bg-yellow-400 border-yellow-500 text-zinc-900 shadow-sm'
                             : 'border-zinc-300 bg-white hover:border-zinc-400'
-                        }`}
+                          }`}
                       >
                         {isSelected && <Check size={12} strokeWidth={3} />}
                       </div>
@@ -232,11 +229,10 @@ export const MonthMultiSelect: React.FC<MonthMultiSelectProps> = ({
 
                     {count > 0 && (
                       <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-2 shrink-0 ${
-                          isSelected
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-2 shrink-0 ${isSelected
                             ? 'bg-yellow-200 text-yellow-900'
                             : 'bg-zinc-100 text-zinc-500'
-                        }`}
+                          }`}
                       >
                         {count} {count === 1 ? 'venda' : 'vendas'}
                       </span>

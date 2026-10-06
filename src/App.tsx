@@ -1378,9 +1378,10 @@ function VendasTab({
   const sellerOptions = availableSellers.length > 0
     ? Array.from(new Set([...availableSellers.map(s => s.name), ...SELLERS]))
     : SELLERS;
-  const conditionOptions = availableConditions.length > 0
-    ? Array.from(new Set([...availableConditions.map(c => c.name), ...CONDITIONS]))
-    : CONDITIONS;
+  const conditionOptions = Array.from(new Set([
+    ...(availableConditions.length > 0 ? availableConditions.map(c => c.name) : CONDITIONS),
+    ...sales.map(s => s.condicao).filter((c): c is Condition => Boolean(c))
+  ]));
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
@@ -1389,12 +1390,14 @@ function VendasTab({
     vendedor: string;
     marca: string;
     equipamento: string;
+    condicao: string;
     months: string[];
   }>({
     search: '',
     vendedor: 'all',
     marca: 'all',
     equipamento: 'all',
+    condicao: 'all',
     months: []
   });
   
@@ -1511,6 +1514,8 @@ function VendasTab({
     const matchesVendedor = filters.vendedor === 'all' || s.vendedor === filters.vendedor;
     const matchesMarca = filters.marca === 'all' || (s.marca || 'JCB').trim().toUpperCase() === filters.marca.toUpperCase();
     const matchesEquipamento = filters.equipamento === 'all' || s.equipamento === filters.equipamento;
+    const matchesCondicao = filters.condicao === 'all' || 
+      (s.condicao && s.condicao.trim().toLowerCase() === filters.condicao.trim().toLowerCase());
     
     let matchesMonth = true;
     if (filters.months && filters.months.length > 0) {
@@ -1519,7 +1524,7 @@ function VendasTab({
       matchesMonth = filters.months.includes(monthStr);
     }
     
-    return matchesSearch && matchesVendedor && matchesMarca && matchesEquipamento && matchesMonth;
+    return matchesSearch && matchesVendedor && matchesMarca && matchesEquipamento && matchesCondicao && matchesMonth;
   });
 
   const sortedSales = [...filteredSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
@@ -1750,7 +1755,7 @@ function VendasTab({
             <BarChart3 size={18} className="text-yellow-500" />
             Filtros de Venda
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Buscar Cliente</label>
               <input 
@@ -1792,6 +1797,17 @@ function VendasTab({
               >
                 <option value="all">Todos</option>
                 {equipmentOptions.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 truncate block" title="Condição de Pagamento">Condição de Pagamento</label>
+              <select 
+                value={filters.condicao}
+                onChange={e => setFilters({...filters, condicao: e.target.value})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+              >
+                <option value="all">Todas</option>
+                {conditionOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="space-y-1">
@@ -1837,10 +1853,10 @@ function VendasTab({
             </div>
           )}
 
-          {(filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.months.length > 0) && (
+          {(filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.condicao !== 'all' || filters.months.length > 0) && (
             <div className="flex items-center justify-between pt-1">
               <button 
-                onClick={() => setFilters({ search: '', vendedor: 'all', marca: 'all', equipamento: 'all', months: [] })}
+                onClick={() => setFilters({ search: '', vendedor: 'all', marca: 'all', equipamento: 'all', condicao: 'all', months: [] })}
                 className="text-[10px] font-bold uppercase tracking-widest text-yellow-600 hover:text-yellow-700 underline cursor-pointer"
               >
                 Limpar Filtros
@@ -1854,7 +1870,7 @@ function VendasTab({
           <div className="p-6 border-b border-zinc-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <h3 className="font-bold flex items-center gap-2">
               <TrendingUp size={20} className="text-yellow-500" />
-              {filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.months.length > 0 ? 'Vendas Filtradas' : 'Últimas Vendas'}
+              {filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.condicao !== 'all' || filters.months.length > 0 ? 'Vendas Filtradas' : 'Últimas Vendas'}
               <span className="text-xs text-zinc-400 font-normal ml-2">({sortedSales.length} {sortedSales.length === 1 ? 'registro' : 'registros'})</span>
             </h3>
 
