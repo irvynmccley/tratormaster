@@ -87,3 +87,9 @@ export interface SellerItem {
   email?: string;
   active?: boolean;
 }
+
+export interface PaymentConditionItem {
+  id: string;
+  name: string;
+  active?: boolean;
+}

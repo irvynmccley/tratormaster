@@ -1,6 +1,6 @@
 import PocketBase from 'pocketbase';
-import { Sale, Goal, CompanyGoal, Kit, Seller, Equipment, Condition, Marca, TipoCota, ProductItem, CategoryItem, SellerItem } from '../types';
-import { INITIAL_GOALS, INITIAL_COMPANY_GOALS, EQUIPMENTS, MARCAS, SELLERS } from '../constants';
+import { Sale, Goal, CompanyGoal, Kit, Seller, Equipment, Condition, Marca, TipoCota, ProductItem, CategoryItem, SellerItem, PaymentConditionItem } from '../types';
+import { INITIAL_GOALS, INITIAL_COMPANY_GOALS, EQUIPMENTS, MARCAS, SELLERS, CONDITIONS } from '../constants';
 
 const pbUrl = import.meta.env.VITE_POCKETBASE_URL || 'https://pb-tratormaster.janagencia.com.br';
 
@@ -279,4 +279,26 @@ export async function createSeller(name: string, email?: string): Promise<Seller
 
 export async function deleteSeller(id: string): Promise<void> {
   await pb.collection('sellers').delete(id);
+}
+
+// --- PAYMENT CONDITIONS (CONDIÇÕES DE PAGAMENTO) CRUD ---
+export async function fetchPaymentConditions(): Promise<PaymentConditionItem[]> {
+  try {
+    const records = await pb.collection('payment_conditions').getFullList({ sort: 'name' });
+    if (records.length > 0) {
+      return records.map(r => ({ id: r.id, name: r.name, active: r.active ?? true }));
+    }
+  } catch (err) {
+    console.warn('Failed to fetch payment conditions from PB, using defaults:', err);
+  }
+  return CONDITIONS.map((name, i) => ({ id: `default-${i}`, name, active: true }));
+}
+
+export async function createPaymentCondition(name: string): Promise<PaymentConditionItem> {
+  const record = await pb.collection('payment_conditions').create({ name: name.trim(), active: true });
+  return { id: record.id, name: record.name, active: record.active };
+}
+
+export async function deletePaymentCondition(id: string): Promise<void> {
+  await pb.collection('payment_conditions').delete(id);
 }

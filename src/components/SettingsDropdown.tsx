@@ -7,7 +7,8 @@ import {
   Tag,
   UserPlus,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  CreditCard
 } from 'lucide-react';
 
 interface SettingsDropdownProps {
@@ -15,6 +16,7 @@ interface SettingsDropdownProps {
   onOpenManageProducts: () => void;
   onOpenManageCategories: () => void;
   onOpenManageSellers: () => void;
+  onOpenManageConditions: () => void;
   onLogout: () => void;
 }
 
@@ -23,6 +25,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
   onOpenManageProducts,
   onOpenManageCategories,
   onOpenManageSellers,
+  onOpenManageConditions,
   onLogout
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -116,6 +119,20 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
                   <UserPlus size={15} />
                 </div>
                 <span>Cadastrar Vendedor</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onOpenManageConditions();
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-zinc-800/80 rounded-xl transition-colors text-left cursor-pointer"
+              >
+                <div className="p-1 rounded-lg bg-yellow-400/10 text-yellow-400">
+                  <CreditCard size={15} />
+                </div>
+                <span>Cadastrar Condição de Pagamento</span>
               </button>
             </div>
 

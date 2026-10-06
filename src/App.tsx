@@ -70,6 +70,7 @@ import {
   fetchProducts,
   fetchCategories,
   fetchSellers,
+  fetchPaymentConditions,
   authService,
   isPocketBaseConfigured
 } from './lib/pocketbase';
@@ -79,9 +80,10 @@ import { ChangePasswordModal } from './components/modals/ChangePasswordModal';
 import { ManageProductsModal } from './components/modals/ManageProductsModal';
 import { ManageCategoriesModal } from './components/modals/ManageCategoriesModal';
 import { ManageSellersModal } from './components/modals/ManageSellersModal';
+import { ManageConditionsModal } from './components/modals/ManageConditionsModal';
 import { MonthMultiSelect, formatMonthYear } from './components/MonthMultiSelect';
 import { LogOut } from 'lucide-react';
-import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota, ProductItem, CategoryItem, SellerItem } from './types';
+import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota, ProductItem, CategoryItem, SellerItem, PaymentConditionItem } from './types';
 import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS } from './constants';
 
 function cn(...inputs: ClassValue[]) {
@@ -170,11 +172,13 @@ export default function App() {
   const [isManageProductsOpen, setIsManageProductsOpen] = useState(false);
   const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false);
   const [isManageSellersOpen, setIsManageSellersOpen] = useState(false);
+  const [isManageConditionsOpen, setIsManageConditionsOpen] = useState(false);
 
   // Settings Collections Data
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [sellers, setSellers] = useState<SellerItem[]>([]);
+  const [conditions, setConditions] = useState<PaymentConditionItem[]>([]);
 
   useEffect(() => {
     const unsubscribe = authService.onAuthChange((_token, record) => {
@@ -233,16 +237,18 @@ export default function App() {
             console.warn('PocketBase company goals fetch failed:', err);
           }
 
-          // 4. Fetch Settings Items (Products, Categories, Sellers)
+          // 4. Fetch Settings Items (Products, Categories, Sellers, Payment Conditions)
           try {
-            const [pList, cList, sList] = await Promise.all([
+            const [pList, cList, sList, condList] = await Promise.all([
               fetchProducts(),
               fetchCategories(),
-              fetchSellers()
+              fetchSellers(),
+              fetchPaymentConditions()
             ]);
             setProducts(pList);
             setCategories(cList);
             setSellers(sList);
+            setConditions(condList);
           } catch (err: any) {
             console.warn('PocketBase settings fetch failed:', err);
           }
@@ -454,33 +460,16 @@ export default function App() {
           
           <div className="flex flex-col md:flex-row items-center gap-4">
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 bg-zinc-900 border border-yellow-400/30 px-2.5 py-1.5 rounded-xl">
-                <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                <span className="text-[10px] text-zinc-300 font-bold truncate max-w-[120px]" title={user?.email}>
-                  {user?.name || user?.email?.split('@')[0]}
-                </span>
-                <span className="text-[9px] bg-yellow-400 text-black font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
-                  Gestor
-                </span>
-              </div>
-
               {/* Settings Gear Dropdown */}
               <SettingsDropdown
                 onOpenChangePassword={() => setIsChangePasswordOpen(true)}
                 onOpenManageProducts={() => setIsManageProductsOpen(true)}
                 onOpenManageCategories={() => setIsManageCategoriesOpen(true)}
                 onOpenManageSellers={() => setIsManageSellersOpen(true)}
+                onOpenManageConditions={() => setIsManageConditionsOpen(true)}
                 onLogout={handleLogout}
               />
 
-              <button 
-                onClick={handleBackupJSON}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
-                title="Backup Banco de Dados (JSON)"
-              >
-                <Download size={14} />
-                JSON
-              </button>
               <button 
                 onClick={handleBackupExcel}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
@@ -589,6 +578,7 @@ export default function App() {
                 availableProducts={products}
                 availableCategories={categories}
                 availableSellers={sellers}
+                availableConditions={conditions}
               />
             </motion.div>
           )}
@@ -671,6 +661,13 @@ export default function App() {
         onClose={() => setIsManageSellersOpen(false)}
         sellers={sellers}
         onSellersChange={setSellers}
+      />
+
+      <ManageConditionsModal
+        isOpen={isManageConditionsOpen}
+        onClose={() => setIsManageConditionsOpen(false)}
+        conditions={conditions}
+        onConditionsChange={setConditions}
       />
     </div>
   );
@@ -1360,7 +1357,8 @@ function VendasTab({
   onDeleteSale,
   availableProducts = [],
   availableCategories = [],
-  availableSellers = []
+  availableSellers = [],
+  availableConditions = []
 }: { 
   sales: Sale[], 
   onAddSale: (sale: any) => void, 
@@ -1368,7 +1366,8 @@ function VendasTab({
   onDeleteSale: (id: string) => void,
   availableProducts?: ProductItem[],
   availableCategories?: CategoryItem[],
-  availableSellers?: SellerItem[]
+  availableSellers?: SellerItem[],
+  availableConditions?: PaymentConditionItem[]
 }) {
   const brandOptions = availableCategories.length > 0 
     ? Array.from(new Set([...availableCategories.map(c => c.name), ...MARCAS]))
@@ -1379,6 +1378,9 @@ function VendasTab({
   const sellerOptions = availableSellers.length > 0
     ? Array.from(new Set([...availableSellers.map(s => s.name), ...SELLERS]))
     : SELLERS;
+  const conditionOptions = availableConditions.length > 0
+    ? Array.from(new Set([...availableConditions.map(c => c.name), ...CONDITIONS]))
+    : CONDITIONS;
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
@@ -1455,11 +1457,14 @@ function VendasTab({
       saleData.observacao = formData.observacao;
     }
 
+    if (formData.condicao) {
+      saleData.condicao = formData.condicao;
+    }
+
     if (formData.marca === 'JCB') {
       saleData.eventoSyonet = formData.eventoSyonet;
       saleData.equipamento = formData.equipamento;
       saleData.notaFiscal = formData.notaFiscal;
-      saleData.condicao = formData.condicao;
     } else if (formData.marca === 'EP' || formData.marca === 'Clark') {
       saleData.eventoSyonet = formData.eventoSyonet;
       saleData.notaFiscal = formData.notaFiscal;
@@ -1527,7 +1532,7 @@ function VendasTab({
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       {/* Form Section */}
       <div className="lg:col-span-1">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 sticky top-24">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto custom-scrollbar flex flex-col">
           <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
             {editingId ? <Edit2 size={20} className="text-yellow-500" /> : <Plus size={20} className="text-yellow-500" />}
             {editingId ? 'Editar Venda' : 'Lançar Nova Venda'}
@@ -1545,7 +1550,7 @@ function VendasTab({
               <select 
                 value={formData.marca}
                 onChange={e => setFormData({...formData, marca: e.target.value as Marca})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer"
                 required
               >
                 <option value="" disabled>Selecione a marca</option>
@@ -1591,7 +1596,7 @@ function VendasTab({
                 <select 
                   value={formData.equipamento}
                   onChange={e => setFormData({...formData, equipamento: e.target.value})}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer"
                   required
                 >
                   <option value="" disabled>Selecione o equipamento</option>
@@ -1628,6 +1633,7 @@ function VendasTab({
                       step="0.01"
                       value={formData.comissaoPersonalizada}
                       onChange={e => setFormData({...formData, comissaoPersonalizada: e.target.value ? Number(e.target.value) : ('' as unknown as number)})}
+                      onWheel={(e) => (e.target as HTMLElement).blur()}
                       className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
                       placeholder="0,00"
                       required
@@ -1641,6 +1647,7 @@ function VendasTab({
                     min="1"
                     value={formData.quantidadeCota}
                     onChange={e => setFormData({...formData, quantidadeCota: Number(e.target.value)})}
+                    onWheel={(e) => (e.target as HTMLElement).blur()}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
                     required
                   />
@@ -1654,7 +1661,8 @@ function VendasTab({
                 step="0.01"
                 value={formData.valor}
                 onChange={e => setFormData({...formData, valor: e.target.value ? Number(e.target.value) : ('' as unknown as number)})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                onWheel={(e) => (e.target as HTMLElement).blur()}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all font-medium text-zinc-900"
                 placeholder="0,00"
                 required
               />
@@ -1664,7 +1672,7 @@ function VendasTab({
               <select 
                 value={formData.vendedor}
                 onChange={e => setFormData({...formData, vendedor: e.target.value as Seller})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer"
                 required
               >
                 <option value="" disabled>Selecione o vendedor</option>
@@ -1696,23 +1704,23 @@ function VendasTab({
               </InputGroup>
             )}
 
-            {formData.marca === 'JCB' && (
-              <InputGroup label="Condição">
+            {formData.marca !== 'Consórcio' && (
+              <InputGroup label="Condição de Pagamento">
                 <select 
                   value={formData.condicao}
                   onChange={e => setFormData({...formData, condicao: e.target.value as Condition})}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all"
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer"
                 >
-                  <option value="" disabled>Selecione a condição</option>
-                  {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="">Selecione a condição de pagamento</option>
+                  {conditionOptions.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </InputGroup>
             )}
 
-            <div className="flex gap-2 mt-4">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm pt-4 pb-1 mt-4 border-t border-zinc-100 flex gap-2 z-10">
               <button 
                 type="submit"
-                className="flex-1 bg-black text-white font-bold py-3 rounded-xl hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+                className="flex-1 bg-black text-white font-bold py-3 rounded-xl hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
               >
                 {editingId ? <Edit2 size={18} className="text-yellow-400" /> : <Plus size={18} className="text-yellow-400" />}
                 {editingId ? 'Salvar Edição' : 'Confirmar Venda'}
@@ -1724,7 +1732,7 @@ function VendasTab({
                     setEditingId(null);
                     setFormData(initialFormState);
                   }}
-                  className="px-4 bg-zinc-200 text-zinc-700 font-bold rounded-xl hover:bg-zinc-300 transition-colors"
+                  className="px-4 bg-zinc-200 text-zinc-700 font-bold rounded-xl hover:bg-zinc-300 transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -1886,7 +1894,14 @@ function VendasTab({
                               ? `${sale.quantidadeCota || 1} Cota(s)${sale.tipoCota ? ` - ${sale.tipoCota}` : ''}` 
                               : sale.equipamento}
                           </span>
-                          <span className="px-1.5 py-0.5 bg-zinc-100 rounded text-[9px] font-bold uppercase">{(sale.marca || 'JCB').trim().toUpperCase()}</span>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="px-1.5 py-0.5 bg-zinc-100 rounded text-[9px] font-bold uppercase">{(sale.marca || 'JCB').trim().toUpperCase()}</span>
+                            {sale.condicao && (
+                              <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200/60 rounded text-[9px] font-semibold" title="Condição de Pagamento">
+                                {sale.condicao}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-3 py-3 font-medium text-xs break-words">
