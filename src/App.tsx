@@ -83,8 +83,8 @@ import { ManageSellersModal } from './components/modals/ManageSellersModal';
 import { ManageConditionsModal } from './components/modals/ManageConditionsModal';
 import { MonthMultiSelect, formatMonthYear } from './components/MonthMultiSelect';
 import { LogOut } from 'lucide-react';
-import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota, ProductItem, CategoryItem, SellerItem, PaymentConditionItem } from './types';
-import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS } from './constants';
+import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota, ProductItem, CategoryItem, SellerItem, PaymentConditionItem, Segmento } from './types';
+import { EQUIPMENTS, SELLERS, CONDITIONS, INITIAL_GOALS, INITIAL_COMPANY_GOALS, MARCAS, SEGMENTOS } from './constants';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -101,6 +101,28 @@ const formatDate = (dateStr: string | undefined) => {
     return `${d}/${m}/${y}`;
   }
   return new Date(dateStr).toLocaleDateString('pt-BR');
+};
+
+const CustomSegmentoTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white p-3 rounded-2xl shadow-xl border border-zinc-100 space-y-2 min-w-[200px]">
+        <p className="font-bold text-sm text-zinc-900">{label}</p>
+        <div className="flex items-center justify-between gap-4 text-xs">
+          <span className="font-bold text-zinc-600">Unidades Vendidas:</span>
+          <span className="font-black text-zinc-900">{data.quantidade} un ({data.percentual}%)</span>
+        </div>
+        <div className="flex items-center justify-between gap-4 text-xs pt-2 border-t border-zinc-100">
+          <span className="font-bold text-zinc-500">Volume Total:</span>
+          <span className="font-black text-yellow-500">
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.valorTotal)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+  return null;
 };
 
 const CustomConsorcioTooltip = ({ active, payload, label }: any) => {
@@ -393,6 +415,7 @@ export default function App() {
       Cliente: s.cliente,
       'Nota Fiscal': s.notaFiscal,
       Condição: s.condicao,
+      Seguimento: s.seguimento || '',
       'Quantidade Cota': s.quantidadeCota,
       'Tipo Cota': s.tipoCota,
       'Comissão Personalizada': s.comissaoPersonalizada,
@@ -731,6 +754,32 @@ function DashboardTab({
     }).filter(p => p.meta > 0 || p.realizado > 0);
   }, [sales, goals]);
 
+  // 5. Performance e Participação por Seguimento (Agro, Construção, Locação)
+  const segmentoPerformance = useMemo(() => {
+    const validSales = sales.filter(s => Boolean(s.seguimento));
+    const totalCount = validSales.length;
+    const colors: Record<string, string> = {
+      'Agro': '#16a34a', // Verde
+      'Construção': '#ea580c', // Laranja
+      'Locação': '#2563eb', // Azul
+    };
+
+    return SEGMENTOS.map(seg => {
+      const segSales = validSales.filter(s => (s.seguimento || '').trim().toLowerCase() === seg.toLowerCase());
+      const quantidade = segSales.length;
+      const valorTotal = segSales.reduce((acc, s) => acc + (Number(s.valor) || 0), 0);
+      const percentual = totalCount > 0 ? ((quantidade / totalCount) * 100).toFixed(1) : '0';
+
+      return {
+        name: seg,
+        quantidade,
+        percentual,
+        valorTotal,
+        fill: colors[seg] || '#eab308'
+      };
+    });
+  }, [sales]);
+
   // 4. Performance de Consórcio por Consultor
   const consorcioPerformance = useMemo(() => {
     return SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).map(seller => {
@@ -1039,6 +1088,90 @@ function DashboardTab({
                 </Bar>
                 <Bar dataKey="meta" name="Meta de Cotas" fill="#facc15" radius={[6, 6, 0, 0]} barSize={40}>
                   <LabelList dataKey="meta" position="top" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#eab308' }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 5. Participação por Seguimento (Agro, Construção, Locação) */}
+        <div id="chart-seguimento" className="bg-white p-8 rounded-[2.5rem] border border-zinc-100 shadow-xl shadow-zinc-200/50 space-y-8 lg:col-span-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" />
+                <h4 className="text-lg font-black uppercase tracking-tighter text-zinc-900">Participação por Seguimento</h4>
+              </div>
+              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">Distribuição e Performance: Agro, Construção e Locação</p>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 bg-zinc-50 px-4 py-2 rounded-xl border border-zinc-100 text-xs font-bold">
+                <span className="flex items-center gap-1.5 text-zinc-700">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" /> Agro
+                </span>
+                <span className="flex items-center gap-1.5 text-zinc-700">
+                  <span className="w-2.5 h-2.5 rounded-full bg-orange-600 inline-block" /> Construção
+                </span>
+                <span className="flex items-center gap-1.5 text-zinc-700">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" /> Locação
+                </span>
+              </div>
+              <button 
+                onClick={() => handleShare('chart-seguimento', 'Participacao_por_Seguimento')} 
+                className="p-2 hover:bg-zinc-50 rounded-xl transition-colors cursor-pointer"
+                title="Compartilhar gráfico"
+              >
+                <Share2 size={18} className="text-zinc-400" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {segmentoPerformance.map(seg => (
+              <div key={seg.name} className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-100 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">{seg.name}</p>
+                  <p className="text-2xl font-black text-zinc-900 tracking-tight">{seg.quantidade} <span className="text-xs font-bold text-zinc-400">un ({seg.percentual}%)</span></p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total</p>
+                  <p className="text-xs font-black text-yellow-600">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(seg.valorTotal)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="h-[320px] w-full pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={segmentoPerformance} margin={{ top: 25, right: 30, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#71717a', fontSize: 12, fontWeight: 800 }}
+                />
+                <YAxis 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                  allowDecimals={false}
+                />
+                <Tooltip 
+                  content={<CustomSegmentoTooltip />}
+                  cursor={{ fill: 'rgba(250, 204, 21, 0.08)' }}
+                />
+                <Bar dataKey="quantidade" radius={[10, 10, 0, 0]} barSize={56}>
+                  {segmentoPerformance.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                  <LabelList 
+                    dataKey="quantidade" 
+                    position="top" 
+                    formatter={(val: any) => `${val} un`}
+                    style={{ fontSize: '12px', fontWeight: 900, fill: '#18181b' }} 
+                  />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1385,12 +1518,14 @@ function VendasTab({
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [filters, setFilters] = useState<{
     search: string;
     vendedor: string;
     marca: string;
     equipamento: string;
     condicao: string;
+    seguimento: string;
     months: string[];
   }>({
     search: '',
@@ -1398,6 +1533,7 @@ function VendasTab({
     marca: 'all',
     equipamento: 'all',
     condicao: 'all',
+    seguimento: 'all',
     months: []
   });
   
@@ -1414,6 +1550,7 @@ function VendasTab({
     quantidadeCota: '' as unknown as number,
     tipoCota: '' as unknown as any,
     comissaoPersonalizada: '' as unknown as number,
+    seguimento: '',
     observacao: ''
   };
 
@@ -1434,6 +1571,7 @@ function VendasTab({
       quantidadeCota: sale.quantidadeCota || ('' as unknown as number),
       tipoCota: sale.tipoCota || ('' as unknown as any),
       comissaoPersonalizada: sale.comissaoPersonalizada !== undefined ? sale.comissaoPersonalizada : ('' as unknown as number),
+      seguimento: sale.seguimento || '',
       observacao: sale.observacao || ''
     });
   };
@@ -1462,6 +1600,10 @@ function VendasTab({
 
     if (formData.condicao) {
       saleData.condicao = formData.condicao;
+    }
+
+    if (formData.seguimento) {
+      saleData.seguimento = formData.seguimento;
     }
 
     if (formData.marca === 'JCB') {
@@ -1516,6 +1658,8 @@ function VendasTab({
     const matchesEquipamento = filters.equipamento === 'all' || s.equipamento === filters.equipamento;
     const matchesCondicao = filters.condicao === 'all' || 
       (s.condicao && s.condicao.trim().toLowerCase() === filters.condicao.trim().toLowerCase());
+    const matchesSeguimento = filters.seguimento === 'all' || 
+      (s.seguimento && s.seguimento.trim().toLowerCase() === filters.seguimento.trim().toLowerCase());
     
     let matchesMonth = true;
     if (filters.months && filters.months.length > 0) {
@@ -1524,7 +1668,7 @@ function VendasTab({
       matchesMonth = filters.months.includes(monthStr);
     }
     
-    return matchesSearch && matchesVendedor && matchesMarca && matchesEquipamento && matchesCondicao && matchesMonth;
+    return matchesSearch && matchesVendedor && matchesMarca && matchesEquipamento && matchesCondicao && matchesSeguimento && matchesMonth;
   });
 
   const sortedSales = [...filteredSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
@@ -1609,6 +1753,17 @@ function VendasTab({
                 </select>
               </InputGroup>
             )}
+
+            <InputGroup label="Seguimento">
+              <select 
+                value={formData.seguimento || ''}
+                onChange={e => setFormData({...formData, seguimento: e.target.value as Segmento})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer"
+              >
+                <option value="">Selecione o seguimento</option>
+                {SEGMENTOS.map(seg => <option key={seg} value={seg}>{seg}</option>)}
+              </select>
+            </InputGroup>
 
             {formData.marca === 'Consórcio' && (
               <>
@@ -1751,67 +1906,119 @@ function VendasTab({
       <div className="lg:col-span-2 space-y-6">
         {/* Filters */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-100 space-y-4">
-          <div className="flex items-center gap-2 text-zinc-900 font-bold mb-2">
-            <BarChart3 size={18} className="text-yellow-500" />
-            Filtros de Venda
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Buscar Cliente</label>
-              <input 
-                type="text"
-                placeholder="Nome do cliente..."
-                value={filters.search}
-                onChange={e => setFilters({...filters, search: e.target.value})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
-              />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-100">
+            <div className="flex items-center gap-2 text-zinc-900 font-bold">
+              <BarChart3 size={18} className="text-yellow-500" />
+              <span>Filtros de Venda</span>
             </div>
+
+            {/* Lupa Expansível para Busca de Cliente */}
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <div className={cn(
+                "flex items-center bg-zinc-50 border border-zinc-200 rounded-xl transition-all duration-300 ease-in-out overflow-hidden shadow-sm",
+                isSearchExpanded || filters.search ? "w-64 sm:w-72 px-3 py-1.5 ring-2 ring-yellow-400 bg-white" : "w-10 h-10 justify-center cursor-pointer hover:bg-zinc-100 hover:border-yellow-400"
+              )}>
+                <button
+                  type="button"
+                  onClick={() => setIsSearchExpanded(prev => !prev)}
+                  className="text-zinc-500 hover:text-yellow-600 transition-colors flex items-center justify-center cursor-pointer"
+                  title="Buscar Cliente"
+                >
+                  <Search size={16} />
+                </button>
+                {(isSearchExpanded || filters.search) && (
+                  <>
+                    <input 
+                      type="text"
+                      autoFocus
+                      placeholder="Buscar cliente..."
+                      value={filters.search}
+                      onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                      className="w-full bg-transparent border-none text-xs ml-2 outline-none text-zinc-800 placeholder-zinc-400 font-medium"
+                    />
+                    {filters.search && (
+                      <button
+                        type="button"
+                        onClick={() => setFilters(prev => ({ ...prev, search: '' }))}
+                        className="text-zinc-400 hover:text-zinc-700 p-0.5 rounded cursor-pointer"
+                        title="Limpar busca"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Grid perfeitamente alinhado dos 5 seletores principais de filtro */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5 items-end">
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Vendedor</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 block truncate">Vendedor</label>
               <select 
                 value={filters.vendedor}
                 onChange={e => setFilters({...filters, vendedor: e.target.value})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer h-[38px]"
               >
                 <option value="all">Todos</option>
                 {sellerOptions.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Marca</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 block truncate">Marca</label>
               <select 
                 value={filters.marca}
                 onChange={e => setFilters({...filters, marca: e.target.value})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer h-[38px]"
               >
                 <option value="all">Todas</option>
                 {brandOptions.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
+
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Equipamento</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 block truncate">Equipamento</label>
               <select 
                 value={filters.equipamento}
                 onChange={e => setFilters({...filters, equipamento: e.target.value})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer h-[38px]"
               >
                 <option value="all">Todos</option>
                 {equipmentOptions.map(e => <option key={e} value={e}>{e}</option>)}
               </select>
             </div>
+
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 truncate block" title="Condição de Pagamento">Condição de Pagamento</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 block truncate" title="Condição de Pagamento">Condição de Pagamento</label>
               <select 
                 value={filters.condicao}
                 onChange={e => setFilters({...filters, condicao: e.target.value})}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer h-[38px]"
               >
                 <option value="all">Todas</option>
                 {conditionOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Mês/Ano</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 block truncate">Seguimento</label>
+              <select 
+                value={filters.seguimento}
+                onChange={e => setFilters({...filters, seguimento: e.target.value})}
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-yellow-400 outline-none transition-all cursor-pointer h-[38px]"
+              >
+                <option value="all">Todos</option>
+                {SEGMENTOS.map(seg => <option key={seg} value={seg}>{seg}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Linha dedicada de Mês/Ano e Badges de Seleção */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-zinc-100">
+            <div className="w-full sm:w-64">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1 block mb-1">Mês/Ano</label>
               <MonthMultiSelect 
                 availableMonths={availableMonths}
                 selectedMonths={filters.months}
@@ -1819,44 +2026,46 @@ function VendasTab({
                 monthSalesCount={monthSalesCount}
               />
             </div>
+
+            {filters.months.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 flex-1 pl-2">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mr-1">
+                  Selecionados:
+                </span>
+                {filters.months.map(m => (
+                  <span 
+                    key={m}
+                    className="inline-flex items-center gap-1.5 bg-yellow-100/80 border border-yellow-300 text-yellow-950 font-bold px-2 py-0.5 rounded-lg text-xs"
+                  >
+                    <span>{formatMonthYear(m)}</span>
+                    <button 
+                      type="button"
+                      onClick={() => setFilters(prev => ({ ...prev, months: prev.months.filter(x => x !== m) }))}
+                      className="hover:bg-yellow-200 rounded p-0.5 text-yellow-800 transition-colors cursor-pointer"
+                      title={`Remover ${formatMonthYear(m)}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                <button 
+                  type="button"
+                  onClick={() => setFilters(prev => ({ ...prev, months: [] }))}
+                  className="text-xs text-zinc-400 hover:text-zinc-700 underline font-medium ml-1 cursor-pointer"
+                >
+                  Limpar
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Badges de Meses Selecionados */}
-          {filters.months.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-100">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mr-1">
-                Meses Selecionados:
-              </span>
-              {filters.months.map(m => (
-                <span 
-                  key={m}
-                  className="inline-flex items-center gap-1.5 bg-yellow-100/80 border border-yellow-300 text-yellow-950 font-bold px-2.5 py-0.5 rounded-lg text-xs"
-                >
-                  <span>{formatMonthYear(m)}</span>
-                  <button 
-                    type="button"
-                    onClick={() => setFilters(prev => ({ ...prev, months: prev.months.filter(x => x !== m) }))}
-                    className="hover:bg-yellow-200 rounded p-0.5 text-yellow-800 transition-colors cursor-pointer"
-                    title={`Remover ${formatMonthYear(m)}`}
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
+          {(filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.condicao !== 'all' || filters.seguimento !== 'all' || filters.months.length > 0) && (
+            <div className="flex items-center justify-between pt-1 border-t border-zinc-100">
               <button 
-                type="button"
-                onClick={() => setFilters(prev => ({ ...prev, months: [] }))}
-                className="text-xs text-zinc-400 hover:text-zinc-700 underline font-medium ml-1 cursor-pointer"
-              >
-                Limpar meses
-              </button>
-            </div>
-          )}
-
-          {(filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.condicao !== 'all' || filters.months.length > 0) && (
-            <div className="flex items-center justify-between pt-1">
-              <button 
-                onClick={() => setFilters({ search: '', vendedor: 'all', marca: 'all', equipamento: 'all', condicao: 'all', months: [] })}
+                onClick={() => {
+                  setFilters({ search: '', vendedor: 'all', marca: 'all', equipamento: 'all', condicao: 'all', seguimento: 'all', months: [] });
+                  setIsSearchExpanded(false);
+                }}
                 className="text-[10px] font-bold uppercase tracking-widest text-yellow-600 hover:text-yellow-700 underline cursor-pointer"
               >
                 Limpar Filtros
@@ -1870,7 +2079,7 @@ function VendasTab({
           <div className="p-6 border-b border-zinc-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <h3 className="font-bold flex items-center gap-2">
               <TrendingUp size={20} className="text-yellow-500" />
-              {filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.condicao !== 'all' || filters.months.length > 0 ? 'Vendas Filtradas' : 'Últimas Vendas'}
+              {filters.search || filters.vendedor !== 'all' || filters.marca !== 'all' || filters.equipamento !== 'all' || filters.condicao !== 'all' || filters.seguimento !== 'all' || filters.months.length > 0 ? 'Vendas Filtradas' : 'Últimas Vendas'}
               <span className="text-xs text-zinc-400 font-normal ml-2">({sortedSales.length} {sortedSales.length === 1 ? 'registro' : 'registros'})</span>
             </h3>
 
@@ -1905,6 +2114,16 @@ function VendasTab({
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex flex-col gap-1 items-start">
+                          {sale.seguimento && (
+                            <span className={cn(
+                              "text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider",
+                              sale.seguimento === 'Agro' ? "bg-emerald-100 text-emerald-800 border border-emerald-300" :
+                              sale.seguimento === 'Construção' ? "bg-orange-100 text-orange-800 border border-orange-300" :
+                              "bg-blue-100 text-blue-800 border border-blue-300"
+                            )}>
+                              {sale.seguimento}
+                            </span>
+                          )}
                           <span className="text-xs font-bold text-zinc-700">
                             {sale.marca === 'Consórcio' 
                               ? `${sale.quantidadeCota || 1} Cota(s)${sale.tipoCota ? ` - ${sale.tipoCota}` : ''}` 

@@ -50,6 +50,7 @@ function mapSaleFromPB(record: any): Sale {
     equipamento: record.equipamento as Equipment || undefined,
     notaFiscal: record.nota_fiscal || undefined,
     condicao: record.condicao as Condition || undefined,
+    seguimento: record.seguimento || undefined,
     quantidadeCota: record.quantidade_cota ? Number(record.quantidade_cota) : undefined,
     tipoCota: record.tipo_cota as TipoCota || undefined,
     comissaoPersonalizada: record.comissao_personalizada ? Number(record.comissao_personalizada) : undefined,
@@ -69,6 +70,7 @@ function mapSaleToPB(sale: Partial<Sale>) {
   if (sale.equipamento !== undefined) data.equipamento = sale.equipamento;
   if (sale.notaFiscal !== undefined) data.nota_fiscal = sale.notaFiscal;
   if (sale.condicao !== undefined) data.condicao = sale.condicao;
+  if (sale.seguimento !== undefined) data.seguimento = sale.seguimento;
   if (sale.quantidadeCota !== undefined) data.quantidade_cota = sale.quantidadeCota;
   if (sale.tipoCota !== undefined) data.tipo_cota = sale.tipoCota;
   if (sale.comissaoPersonalizada !== undefined) data.comissao_personalizada = sale.comissaoPersonalizada;

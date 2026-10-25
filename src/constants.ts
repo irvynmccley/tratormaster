@@ -1,4 +1,4 @@
-import { Equipment, Seller, Condition, Marca } from './types';
+import { Equipment, Seller, Condition, Marca, Segmento } from './types';
 
 export const EQUIPMENTS: string[] = [
   'Retro 3CX (BHL)',
@@ -22,6 +22,8 @@ export const CONDITIONS: Condition[] = [
 ];
 
 export const MARCAS: Marca[] = ['JCB', 'EP', 'Consórcio', 'Clark'];
+
+export const SEGMENTOS: Segmento[] = ['Agro', 'Construção', 'Locação'];
 
 export const INITIAL_GOALS = SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).flatMap(seller => 
   EQUIPMENTS.filter(e => e !== '3CX Plus').map(equip => ({

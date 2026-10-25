@@ -21,6 +21,7 @@ export type Condition =
 
 export type Marca = 'JCB' | 'EP' | 'Consórcio' | 'Clark';
 export type TipoCota = 'Pontual' | 'Tradicional' | 'Campanha Pontual';
+export type Segmento = 'Agro' | 'Construção' | 'Locação';
 
 export interface Sale {
   id: string;
@@ -37,6 +38,9 @@ export interface Sale {
   
   // JCB only
   condicao?: Condition;
+  
+  // Segmento (Agro, Construção, Locação)
+  seguimento?: Segmento | string;
   
   // Consórcio only
   quantidadeCota?: number;
