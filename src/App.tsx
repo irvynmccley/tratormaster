@@ -81,6 +81,7 @@ import { ManageProductsModal } from './components/modals/ManageProductsModal';
 import { ManageCategoriesModal } from './components/modals/ManageCategoriesModal';
 import { ManageSellersModal } from './components/modals/ManageSellersModal';
 import { ManageConditionsModal } from './components/modals/ManageConditionsModal';
+import { PerformanceReportModal } from './components/modals/PerformanceReportModal';
 import { MonthMultiSelect, formatMonthYear } from './components/MonthMultiSelect';
 import { LogOut } from 'lucide-react';
 import { Sale, Goal, CompanyGoal, Seller, Equipment, Condition, Marca, Kit, TipoCota, ProductItem, CategoryItem, SellerItem, PaymentConditionItem, Segmento } from './types';
@@ -721,6 +722,7 @@ function DashboardTab({
   goals: Goal[], 
   companyGoals: CompanyGoal[] 
 }) {
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
 
@@ -881,6 +883,27 @@ function DashboardTab({
 
   return (
     <div className="space-y-10 pb-20">
+      {/* Header Actions / Relatório Analítico */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-[2rem] border border-zinc-100 shadow-sm">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse" />
+            <h3 className="text-base font-black uppercase tracking-tight text-zinc-900">Painel Executivo de Vendas</h3>
+          </div>
+          <p className="text-xs text-zinc-400 font-medium">Acompanhamento consolidado de metas e entregas comerciais</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsReportModalOpen(true)}
+          className="flex items-center gap-2.5 px-5 py-3 bg-zinc-900 hover:bg-black text-white hover:text-yellow-400 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all duration-200 shadow-md hover:shadow-lg cursor-pointer group"
+          title="Gerar Relatório Analítico de Realizado vs Meta"
+        >
+          <FileText size={16} className="text-yellow-400 group-hover:scale-110 transition-transform" />
+          <span>Relatório Analítico (Realizado x Meta)</span>
+        </button>
+      </div>
+
       {/* Top Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-zinc-900 p-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
@@ -934,6 +957,15 @@ function DashboardTab({
           </div>
         </div>
       </div>
+
+      {/* Modal Relatório Analítico Realizado x Meta */}
+      <PerformanceReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        sales={sales}
+        goals={goals}
+        companyGoals={companyGoals}
+      />
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
