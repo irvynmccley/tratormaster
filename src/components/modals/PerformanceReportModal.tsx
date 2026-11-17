@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, FileText, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, Target, Award, Users, Copy, Check } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, Target, Award, Users, Copy, Check, PieChart, BarChart2 } from 'lucide-react';
 import { Sale, Goal, CompanyGoal } from '../../types';
 import { EQUIPMENTS, SELLERS, SEGMENTOS } from '../../constants';
 
@@ -25,18 +25,42 @@ export const PerformanceReportModal: React.FC<PerformanceReportModalProps> = ({
 
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
-  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-  // Métricas Gerais da Empresa (JCB)
-  const jcbSales = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB');
+  // 1. Vendas de Máquinas JCB
+  const jcbSales = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB' && s.equipamento !== 'Consórcio');
   const totalCompanyMeta = companyGoals.filter(g => g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
   const totalRealized = jcbSales.length;
   const companyAchievement = totalCompanyMeta > 0 ? (totalRealized / totalCompanyMeta) * 100 : 0;
   const remainingTarget = Math.max(0, totalCompanyMeta - totalRealized);
   const remainingMonths = Math.max(1, 12 - currentMonth);
-  const monthlyRunRate = Math.ceil(remainingTarget / remainingMonths);
+  const monthlyRunRate = remainingMonths > 0 ? (remainingTarget / remainingMonths).toFixed(1) : '0';
 
-  // Performance por Consultor (JCB Máquinas)
+  // 2. Participação dos Modelos em relação ao total vendido
+  const modelStats = useMemo(() => {
+    const list = EQUIPMENTS.filter(e => e !== 'Consórcio' && e !== '3CX Plus').map(equip => {
+      const isTarget = (saleEquip: string) => saleEquip === equip || (equip === 'Retro 3CX (BHL)' && saleEquip === '3CX Plus');
+      const count = jcbSales.filter(s => isTarget(s.equipamento || '')).length;
+      const meta = companyGoals.find(g => g.equipamento === equip)?.meta || 0;
+      const share = totalRealized > 0 ? (count / totalRealized) * 100 : 0;
+      const ach = meta > 0 ? (count / meta) * 100 : 0;
+      return {
+        name: equip,
+        count,
+        meta,
+        share,
+        ach
+      };
+    }).filter(e => e.count > 0 || e.meta > 0);
+
+    // Ordenar por volume vendido decrescente (maior participação primeiro)
+    return list.sort((a, b) => b.count - a.count);
+  }, [jcbSales, companyGoals, totalRealized]);
+
+  // Modelos líderes
+  const carroChefe = modelStats[0];
+  const segundoModelo = modelStats.length > 1 ? modelStats[1] : null;
+
+  // 3. Performance por Consultor
   const sellersData = SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).map(seller => {
     const sellerSales = jcbSales.filter(s => (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase()).length;
     const sellerMeta = goals.filter(g => g.vendedor === seller && g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
@@ -61,19 +85,10 @@ export const PerformanceReportModal: React.FC<PerformanceReportModalProps> = ({
     };
   });
 
-  // Equipamentos Destaque e Gargalo
-  const equipData = EQUIPMENTS.filter(e => e !== 'Consórcio' && e !== '3CX Plus').map(equip => {
-    const isTarget = (saleEquip: string) => saleEquip === equip || (equip === 'Retro 3CX (BHL)' && saleEquip === '3CX Plus');
-    const realized = jcbSales.filter(s => isTarget(s.equipamento || '')).length;
-    const meta = companyGoals.find(g => g.equipamento === equip)?.meta || 0;
-    const ach = meta > 0 ? (realized / meta) * 100 : 0;
-    return { name: equip, realized, meta, ach, gap: realized - meta };
-  }).filter(e => e.meta > 0 || e.realized > 0);
+  // Top seller
+  const topSeller = [...sellersData].sort((a, b) => b.sales - a.sales)[0];
 
-  const topEquip = [...equipData].sort((a, b) => b.ach - a.ach)[0];
-  const bottomEquip = [...equipData].filter(e => e.meta > 0).sort((a, b) => a.ach - b.ach)[0];
-
-  // Segmentos
+  // 4. Segmentos
   const validSegSales = sales.filter(s => Boolean(s.seguimento));
   const totalSegCount = validSegSales.length;
   const segStats = SEGMENTOS.map(seg => {
@@ -82,37 +97,46 @@ export const PerformanceReportModal: React.FC<PerformanceReportModalProps> = ({
     return { name: seg, count, pct };
   });
 
-  // Geração de Parecer Executivo Direto
+  const topSegment = [...segStats].sort((a, b) => b.count - a.count)[0];
+
+  // 5. Síntese Analítica Estruturada (Analista de Dados Sênior)
   let statusGeral: 'superando' | 'adequado' | 'atencao' = 'adequado';
   if (companyAchievement >= 100) statusGeral = 'superando';
   else if (companyAchievement < 75) statusGeral = 'atencao';
 
-  const parecerExecutivo = statusGeral === 'superando'
-    ? `A filial atingiu e superou a meta anual com ${companyAchievement.toFixed(1)}% de aproveitamento (${totalRealized} de ${totalCompanyMeta} máquinas vendidas). Foco em maximizar margem e acelerar entregas.`
-    : statusGeral === 'adequado'
-    ? `Operação em ritmo consistente com ${companyAchievement.toFixed(1)}% da meta realizada (${totalRealized}/${totalCompanyMeta}). Faltam ${remainingTarget} máquinas para fechar o ano (ritmo necessário: ~${monthlyRunRate} un/mês).`
-    : `Atenção ao fechamento de metas: atingimento atual de ${companyAchievement.toFixed(1)}% (${totalRealized}/${totalCompanyMeta}). Déficit de ${remainingTarget} máquinas; requer aceleração comercial para atingir ${monthlyRunRate} un/mês.`;
+  const parecerAnalitico = useMemo(() => {
+    const concentracao = carroChefe ? `${carroChefe.name} responde por ${carroChefe.share.toFixed(1)}% do volume total (${carroChefe.count} un)` : '';
+    const concentracaoSeller = topSeller ? `${topSeller.name} lidera as conversões com ${((topSeller.sales / (totalRealized || 1)) * 100).toFixed(0)}% das máquinas entregues` : '';
+    
+    if (statusGeral === 'superando') {
+      return `Superação de Meta (${companyAchievement.toFixed(1)}%): Com ${totalRealized} máquinas faturadas frente à meta de ${totalCompanyMeta}, a operação alcançou saldo positivo (+${totalRealized - totalCompanyMeta} un). ${concentracao}. O canal de maior tração setorial é ${topSegment?.name || 'Locação'} (${topSegment?.pct}% das demandas registradas).`;
+    }
+    
+    if (statusGeral === 'atencao') {
+      return `Atingimento de ${companyAchievement.toFixed(1)}% (${totalRealized}/${totalCompanyMeta} un): Gap de ${remainingTarget} máquinas para fechamento do período, exigindo ritmo de tração de ~${monthlyRunRate} un/mês. Forte concentração de vendas em ${carroChefe?.name || 'Escavadeiras'} (${carroChefe?.share.toFixed(1)}% do mix), enquanto ${concentracaoSeller}.`;
+    }
 
-  // Montar texto para cópia rápida (WhatsApp / Email)
-  const reportText = `📊 RELATÓRIO ANALÍTICO REALIZADO x META | TRATORMASTER (${currentYear})
+    return `Desempenho Comercial em ${companyAchievement.toFixed(1)}% (${totalRealized}/${totalCompanyMeta} un): Restam ${remainingTarget} unidades para cumprimento integral da meta (necessidade de ~${monthlyRunRate} un/mês). O mix é puxado por ${carroChefe?.name || 'modelos principais'} (${carroChefe?.share.toFixed(1)}% de share). ${concentracaoSeller}.`;
+  }, [statusGeral, companyAchievement, totalRealized, totalCompanyMeta, remainingTarget, monthlyRunRate, carroChefe, topSeller, topSegment]);
+
+  // Texto formatado para exportação/cópia
+  const reportText = `📊 RELATÓRIO ANALÍTICO DE DESEMPENHO | TRATORMASTER (${currentYear})
   
-🎯 VISÃO GERAL FILIAL:
-• Meta Anual: ${totalCompanyMeta} máquinas
-• Realizado: ${totalRealized} máquinas (${companyAchievement.toFixed(1)}% atingido)
-• Saldo Restante: ${remainingTarget} unidades (~${monthlyRunRate} un/mês necessárias)
+🎯 VISÃO EXECUTIVA FILIAL:
+• Meta Anual: ${totalCompanyMeta} máquinas | Realizado: ${totalRealized} máquinas
+• Atingimento Global: ${companyAchievement.toFixed(1)}% | Déficit: ${remainingTarget} un (Run-rate: ~${monthlyRunRate} un/mês)
+
+🚜 PARTICIPAÇÃO DOS MODELOS (% SHARE):
+${modelStats.map(m => `• ${m.name}: ${m.share.toFixed(1)}% (${m.count} un vendidas | Meta: ${m.meta} un)`).join('\n')}
 
 👥 DESEMPENHO DOS CONSULTORES:
-${sellersData.map(s => `• ${s.name}: ${s.sales}/${s.meta} máquinas (${s.achievement.toFixed(0)}%) | Consórcio: ${s.consRealized}/${s.consMeta} cotas (${s.consAch.toFixed(0)}%)`).join('\n')}
+${sellersData.map(s => `• ${s.name}: ${s.sales}/${s.meta} máq (${s.achievement.toFixed(0)}%) | Consórcio: ${s.consRealized}/${s.consMeta} cotas (${s.consAch.toFixed(0)}%)`).join('\n')}
 
-🚜 EQUIPAMENTOS:
-• Maior Aderência: ${topEquip ? `${topEquip.name} (${topEquip.realized}/${topEquip.meta} - ${topEquip.ach.toFixed(0)}%)` : 'N/A'}
-• Ponto de Atenção: ${bottomEquip ? `${bottomEquip.name} (${bottomEquip.realized}/${bottomEquip.meta} - ${bottomEquip.ach.toFixed(0)}%)` : 'N/A'}
+🌾 DISTRIBUIÇÃO POR SEGUIMENTO:
+${segStats.map(s => `• ${s.name}: ${s.pct}% (${s.count} un)`).join(' | ')}
 
-🌾 SEGMENTOS PARTICIPAÇÃO:
-${segStats.map(s => `• ${s.name}: ${s.count} un (${s.pct}%)`).join(' | ')}
-
-💡 PARECER EXECUTIVO:
-${parecerExecutivo}`;
+📈 DIAGNÓSTICO DO ANALISTA DE DADOS:
+${parecerAnalitico}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(reportText);
@@ -150,7 +174,7 @@ ${parecerExecutivo}`;
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar text-zinc-800">
           
-          {/* Parecer Executivo Direto */}
+          {/* Diagnóstico Analítico Aprimorado */}
           <div className={`p-4 rounded-2xl border flex items-start gap-3.5 ${
             statusGeral === 'superando' 
               ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950' 
@@ -168,8 +192,8 @@ ${parecerExecutivo}`;
               )}
             </div>
             <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block">Diagnóstico Executivo</span>
-              <p className="text-sm font-semibold leading-relaxed">{parecerExecutivo}</p>
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block">Diagnóstico do Analista de Dados</span>
+              <p className="text-sm font-semibold leading-relaxed">{parecerAnalitico}</p>
             </div>
           </div>
 
@@ -186,6 +210,44 @@ ${parecerExecutivo}`;
             <div className="p-3.5 bg-yellow-50 border border-yellow-200/80 rounded-2xl">
               <p className="text-[10px] font-bold uppercase tracking-wider text-yellow-700">Atingimento</p>
               <p className="text-xl font-black text-yellow-800 mt-1">{companyAchievement.toFixed(1)}%</p>
+            </div>
+          </div>
+
+          {/* Participação dos Modelos no Total Vendido (% Share) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900 flex items-center gap-1.5">
+                <PieChart size={14} className="text-yellow-600" />
+                Participação por Modelo (% do Total Vendido)
+              </h4>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Share de Vendas</span>
+            </div>
+
+            <div className="space-y-2">
+              {modelStats.map(item => (
+                <div key={item.name} className="p-3 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-zinc-900">{item.name}</span>
+                      <span className="text-[11px] text-zinc-400">({item.count} un)</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-sm text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-md border border-yellow-200/70">
+                        {item.share.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Barra de Progresso do Share */}
+                  <div className="w-full bg-zinc-200/70 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className="bg-yellow-500 h-1.5 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, Math.max(item.share, 2))}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -231,35 +293,17 @@ ${parecerExecutivo}`;
             </div>
           </div>
 
-          {/* Destaque Equipamentos & Segmentos */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div className="p-4 bg-zinc-50 border border-zinc-200/70 rounded-2xl space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Destaques por Equipamento</span>
-              {topEquip && (
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-600 truncate mr-2">Maior atingimento:</span>
-                  <span className="font-black text-zinc-900 whitespace-nowrap">{topEquip.name} ({topEquip.ach.toFixed(0)}%)</span>
+          {/* Divisão por Seguimento */}
+          <div className="p-4 bg-zinc-50 border border-zinc-200/70 rounded-2xl space-y-2 text-xs">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Divisão por Seguimento</span>
+            <div className="flex items-center justify-between gap-2 pt-1">
+              {segStats.map(s => (
+                <div key={s.name} className="text-center flex-1">
+                  <span className="text-[10px] font-bold text-zinc-500 block">{s.name}</span>
+                  <span className="font-black text-zinc-900 text-sm">{s.pct}%</span>
+                  <span className="text-[9px] text-zinc-400 block">({s.count} un)</span>
                 </div>
-              )}
-              {bottomEquip && (
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-600 truncate mr-2">Maior atenção:</span>
-                  <span className="font-black text-rose-700 whitespace-nowrap">{bottomEquip.name} ({bottomEquip.ach.toFixed(0)}%)</span>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 bg-zinc-50 border border-zinc-200/70 rounded-2xl space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Divisão por Seguimento</span>
-              <div className="flex items-center justify-between gap-2 pt-1">
-                {segStats.map(s => (
-                  <div key={s.name} className="text-center flex-1">
-                    <span className="text-[10px] font-bold text-zinc-500 block">{s.name}</span>
-                    <span className="font-black text-zinc-900 text-sm">{s.pct}%</span>
-                    <span className="text-[9px] text-zinc-400 block">({s.count} un)</span>
-                  </div>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
 
