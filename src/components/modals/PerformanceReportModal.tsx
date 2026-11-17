@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { X, FileText, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, Target, Award, Users, Copy, Check, PieChart, BarChart2 } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertTriangle, TrendingUp, Users, Copy, Check, PieChart } from 'lucide-react';
 import { Sale, Goal, CompanyGoal } from '../../types';
 import { EQUIPMENTS, SELLERS, SEGMENTOS } from '../../constants';
 
@@ -15,20 +14,35 @@ interface PerformanceReportModalProps {
 export const PerformanceReportModal: React.FC<PerformanceReportModalProps> = ({
   isOpen,
   onClose,
-  sales,
-  goals,
-  companyGoals
+  sales = [],
+  goals = [],
+  companyGoals = []
 }) => {
   const [copied, setCopied] = useState(false);
 
-  if (!isOpen) return null;
+  // Garantir segurança máxima contra dados nulos ou indefinidos
+  const safeSales = Array.isArray(sales) ? sales : [];
+  const safeGoals = Array.isArray(goals) ? goals : [];
+  const safeCompanyGoals = Array.isArray(companyGoals) ? companyGoals : [];
 
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
 
   // 1. Vendas de Máquinas JCB
-  const jcbSales = sales.filter(s => (s.marca || 'JCB').trim().toUpperCase() === 'JCB' && s.equipamento !== 'Consórcio');
-  const totalCompanyMeta = companyGoals.filter(g => g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
+  const jcbSales = useMemo(() => {
+    return safeSales.filter(s => {
+      if (!s) return false;
+      const marca = (s.marca || 'JCB').trim().toUpperCase();
+      return marca === 'JCB' && s.equipamento !== 'Consórcio';
+    });
+  }, [safeSales]);
+
+  const totalCompanyMeta = useMemo(() => {
+    return safeCompanyGoals
+      .filter(g => g && g.equipamento !== 'Consórcio')
+      .reduce((acc, g) => acc + (Number(g.meta) || 0), 0);
+  }, [safeCompanyGoals]);
+
   const totalRealized = jcbSales.length;
   const companyAchievement = totalCompanyMeta > 0 ? (totalRealized / totalCompanyMeta) * 100 : 0;
   const remainingTarget = Math.max(0, totalCompanyMeta - totalRealized);
@@ -40,7 +54,7 @@ export const PerformanceReportModal: React.FC<PerformanceReportModalProps> = ({
     const list = EQUIPMENTS.filter(e => e !== 'Consórcio' && e !== '3CX Plus').map(equip => {
       const isTarget = (saleEquip: string) => saleEquip === equip || (equip === 'Retro 3CX (BHL)' && saleEquip === '3CX Plus');
       const count = jcbSales.filter(s => isTarget(s.equipamento || '')).length;
-      const meta = companyGoals.find(g => g.equipamento === equip)?.meta || 0;
+      const meta = safeCompanyGoals.find(g => g && g.equipamento === equip)?.meta || 0;
       const share = totalRealized > 0 ? (count / totalRealized) * 100 : 0;
       const ach = meta > 0 ? (count / meta) * 100 : 0;
       return {
@@ -52,54 +66,69 @@ export const PerformanceReportModal: React.FC<PerformanceReportModalProps> = ({
       };
     }).filter(e => e.count > 0 || e.meta > 0);
 
-    // Ordenar por volume vendido decrescente (maior participação primeiro)
     return list.sort((a, b) => b.count - a.count);
-  }, [jcbSales, companyGoals, totalRealized]);
+  }, [jcbSales, safeCompanyGoals, totalRealized]);
 
-  // Modelos líderes
-  const carroChefe = modelStats[0];
-  const segundoModelo = modelStats.length > 1 ? modelStats[1] : null;
+  const carroChefe = modelStats[0] || null;
 
   // 3. Performance por Consultor
-  const sellersData = SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).map(seller => {
-    const sellerSales = jcbSales.filter(s => (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase()).length;
-    const sellerMeta = goals.filter(g => g.vendedor === seller && g.equipamento !== 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
-    const sellerAch = sellerMeta > 0 ? (sellerSales / sellerMeta) * 100 : 0;
-    const gap = sellerSales - sellerMeta;
+  const sellersData = useMemo(() => {
+    return SELLERS.filter(s => ['Anderson', 'Carlos', 'Thalita'].includes(s)).map(seller => {
+      const sellerUpper = seller.toUpperCase();
+      const sellerSales = jcbSales.filter(s => (s.vendedor || '').trim().toUpperCase() === sellerUpper).length;
+      const sellerMeta = safeGoals
+        .filter(g => g && (g.vendedor || '').toUpperCase() === sellerUpper && g.equipamento !== 'Consórcio')
+        .reduce((acc, g) => acc + (Number(g.meta) || 0), 0);
+      const sellerAch = sellerMeta > 0 ? (sellerSales / sellerMeta) * 100 : 0;
+      const gap = sellerSales - sellerMeta;
 
-    // Consórcio
-    const sellerConsSales = sales.filter(s => (s.vendedor || '').trim().toUpperCase() === seller.toUpperCase() && s.equipamento === 'Consórcio');
-    const consRealized = sellerConsSales.reduce((acc, s) => acc + (s.quantidadeCota || 1), 0);
-    const consMeta = goals.filter(g => g.vendedor === seller && g.equipamento === 'Consórcio').reduce((acc, g) => acc + g.meta, 0);
-    const consAch = consMeta > 0 ? (consRealized / consMeta) * 100 : 0;
+      // Consórcio
+      const sellerConsSales = safeSales.filter(s => 
+        s && 
+        (s.vendedor || '').trim().toUpperCase() === sellerUpper && 
+        s.equipamento === 'Consórcio'
+      );
+      const consRealized = sellerConsSales.reduce((acc, s) => acc + (Number(s.quantidadeCota) || 1), 0);
+      const consMeta = safeGoals
+        .filter(g => g && (g.vendedor || '').toUpperCase() === sellerUpper && g.equipamento === 'Consórcio')
+        .reduce((acc, g) => acc + (Number(g.meta) || 0), 0);
+      const consAch = consMeta > 0 ? (consRealized / consMeta) * 100 : 0;
 
-    return {
-      name: seller,
-      sales: sellerSales,
-      meta: sellerMeta,
-      achievement: sellerAch,
-      gap,
-      consRealized,
-      consMeta,
-      consAch
-    };
-  });
+      return {
+        name: seller,
+        sales: sellerSales,
+        meta: sellerMeta,
+        achievement: sellerAch,
+        gap,
+        consRealized,
+        consMeta,
+        consAch
+      };
+    });
+  }, [jcbSales, safeGoals, safeSales]);
 
-  // Top seller
-  const topSeller = [...sellersData].sort((a, b) => b.sales - a.sales)[0];
+  const topSeller = useMemo(() => {
+    if (!sellersData.length) return null;
+    return [...sellersData].sort((a, b) => b.sales - a.sales)[0];
+  }, [sellersData]);
 
   // 4. Segmentos
-  const validSegSales = sales.filter(s => Boolean(s.seguimento));
-  const totalSegCount = validSegSales.length;
-  const segStats = SEGMENTOS.map(seg => {
-    const count = validSegSales.filter(s => (s.seguimento || '').trim().toLowerCase() === seg.toLowerCase()).length;
-    const pct = totalSegCount > 0 ? ((count / totalSegCount) * 100).toFixed(0) : '0';
-    return { name: seg, count, pct };
-  });
+  const segStats = useMemo(() => {
+    const validSegSales = safeSales.filter(s => Boolean(s && s.seguimento));
+    const totalSegCount = validSegSales.length;
+    return SEGMENTOS.map(seg => {
+      const count = validSegSales.filter(s => (s.seguimento || '').trim().toLowerCase() === seg.toLowerCase()).length;
+      const pct = totalSegCount > 0 ? ((count / totalSegCount) * 100).toFixed(0) : '0';
+      return { name: seg, count, pct };
+    });
+  }, [safeSales]);
 
-  const topSegment = [...segStats].sort((a, b) => b.count - a.count)[0];
+  const topSegment = useMemo(() => {
+    if (!segStats.length) return null;
+    return [...segStats].sort((a, b) => b.count - a.count)[0];
+  }, [segStats]);
 
-  // 5. Síntese Analítica Estruturada (Analista de Dados Sênior)
+  // 5. Diagnóstico Analítico
   let statusGeral: 'superando' | 'adequado' | 'atencao' = 'adequado';
   if (companyAchievement >= 100) statusGeral = 'superando';
   else if (companyAchievement < 75) statusGeral = 'atencao';
@@ -139,18 +168,19 @@ ${segStats.map(s => `• ${s.name}: ${s.pct}% (${s.count} un)`).join(' | ')}
 ${parecerAnalitico}`;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(reportText);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(reportText);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden flex flex-col max-h-[90vh]"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div
+        className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"
       >
         {/* Header */}
         <div className="px-6 py-5 bg-zinc-950 text-white flex items-center justify-between border-b border-zinc-800">
@@ -164,6 +194,7 @@ ${parecerAnalitico}`;
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
           >
@@ -224,30 +255,34 @@ ${parecerAnalitico}`;
             </div>
 
             <div className="space-y-2">
-              {modelStats.map(item => (
-                <div key={item.name} className="p-3 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-zinc-900">{item.name}</span>
-                      <span className="text-[11px] text-zinc-400">({item.count} un)</span>
+              {modelStats.length === 0 ? (
+                <p className="text-xs text-zinc-400 italic py-2">Nenhuma venda de equipamento registrada.</p>
+              ) : (
+                modelStats.map(item => (
+                  <div key={item.name} className="p-3 bg-zinc-50/70 border border-zinc-200/70 rounded-xl space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-zinc-900">{item.name}</span>
+                        <span className="text-[11px] text-zinc-400">({item.count} un)</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-sm text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-md border border-yellow-200/70">
+                          {item.share.toFixed(1)}%
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-sm text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-md border border-yellow-200/70">
-                        {item.share.toFixed(1)}%
-                      </span>
+                    {/* Barra de Progresso do Share */}
+                    <div className="w-full bg-zinc-200/70 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className="bg-yellow-500 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(item.share, 2))}%` }}
+                      />
                     </div>
                   </div>
-
-                  {/* Barra de Progresso do Share */}
-                  <div className="w-full bg-zinc-200/70 rounded-full h-1.5 overflow-hidden">
-                    <div 
-                      className="bg-yellow-500 h-1.5 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(100, Math.max(item.share, 2))}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -328,7 +363,7 @@ ${parecerAnalitico}`;
             Fechar
           </button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 };
